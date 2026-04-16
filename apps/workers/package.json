@@ -1,0 +1,23 @@
+{
+  "name": "@ph4k/workers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "dev": "node ../../node_modules/typescript/bin/tsc -w -p tsconfig.json",
+    "lint": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "node --test dist/**/*.test.js",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "format": "echo format:workers"
+  },
+  "dependencies": {
+    "@aws-sdk/client-scheduler": "^3.782.0",
+    "@aws-sdk/client-dynamodb": "^3.782.0",
+    "@aws-sdk/lib-dynamodb": "^3.782.0",
+    "@ph4k/adapters": "workspace:*",
+    "@ph4k/config": "workspace:*",
+    "@ph4k/core": "workspace:*",
+    "@ph4k/infra": "workspace:*"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "Comment": "Fetch post metrics and sync to spreadsheet",
+  "StartAt": "FetchPostMetrics",
+  "States": {
+    "FetchPostMetrics": {
+      "Type": "Task",
+      "Resource": "${FetchPostMetricsLambdaArn}",
+      "ResultPath": "$.metrics",
+      "Next": "SyncToSpreadsheet"
+    },
+    "SyncToSpreadsheet": {
+      "Type": "Task",
+      "Resource": "${SyncToSpreadsheetLambdaArn}",
+      "ResultPath": "$.sheetSync",
+      "End": true
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "ph4k-sns-manage",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.8.3"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "format": "pnpm -r format",
+    "smoke:external": "node scripts/verify-external-apis.mjs"
+  }
+}

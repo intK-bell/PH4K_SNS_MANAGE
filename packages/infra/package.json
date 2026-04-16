@@ -1,0 +1,28 @@
+{
+  "name": "@ph4k/infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "dev": "node ../../node_modules/typescript/bin/tsc -w -p tsconfig.json",
+    "lint": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "node --test dist/**/*.test.js",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "format": "echo format:infra"
+  },
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.782.0",
+    "@aws-sdk/client-scheduler": "^3.782.0",
+    "@aws-sdk/client-sfn": "^3.782.0",
+    "@aws-sdk/client-dynamodb": "^3.782.0",
+    "@aws-sdk/lib-dynamodb": "^3.782.0",
+    "@ph4k/config": "workspace:*",
+    "@ph4k/core": "workspace:*"
+  }
+}

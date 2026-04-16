@@ -1,0 +1,21 @@
+{
+  "Comment": "Generate candidates and deliver them to LINE",
+  "StartAt": "GenerateCandidates",
+  "States": {
+    "GenerateCandidates": {
+      "Type": "Task",
+      "Resource": "${GenerateCandidatesLambdaArn}",
+      "ResultPath": "$.generated",
+      "Next": "PushCandidatesToLine"
+    },
+    "PushCandidatesToLine": {
+      "Type": "Task",
+      "Resource": "${PushCandidatesToLineLambdaArn}",
+      "Parameters": {
+        "candidateIds.$": "$.generated.items[*].candidateId"
+      },
+      "ResultPath": "$.delivery",
+      "End": true
+    }
+  }
+}

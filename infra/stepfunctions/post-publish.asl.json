@@ -1,0 +1,21 @@
+{
+  "Comment": "Publish selected post and create metric fetch schedules",
+  "StartAt": "PublishSelectedPost",
+  "States": {
+    "PublishSelectedPost": {
+      "Type": "Task",
+      "Resource": "${PublishSelectedPostLambdaArn}",
+      "ResultPath": "$.published",
+      "Next": "CreateMetricFetchSchedule"
+    },
+    "CreateMetricFetchSchedule": {
+      "Type": "Task",
+      "Resource": "${CreateMetricFetchScheduleLambdaArn}",
+      "Parameters": {
+        "postId.$": "$.published.post.postId"
+      },
+      "ResultPath": "$.schedule",
+      "End": true
+    }
+  }
+}

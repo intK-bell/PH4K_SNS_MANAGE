@@ -1,0 +1,23 @@
+{
+  "name": "@ph4k/adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "dev": "node ../../node_modules/typescript/bin/tsc -w -p tsconfig.json",
+    "lint": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "node --test dist/**/*.test.js",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "format": "echo format:adapters"
+  },
+  "dependencies": {
+    "@ph4k/config": "workspace:*",
+    "@ph4k/core": "workspace:*"
+  }
+}

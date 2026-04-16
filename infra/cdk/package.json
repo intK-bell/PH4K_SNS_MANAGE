@@ -1,0 +1,20 @@
+{
+  "name": "@ph4k/cdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "dev": "node ../../node_modules/typescript/bin/tsc -w -p tsconfig.json",
+    "lint": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "node --test dist/**/*.test.js",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "format": "echo format:cdk"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.192.0",
+    "constructs": "^10.4.2",
+    "@ph4k/config": "workspace:*",
+    "@ph4k/core": "workspace:*"
+  }
+}
