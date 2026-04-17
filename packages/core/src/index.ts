@@ -4,6 +4,8 @@ export * from "./domain/idea.js";
 export * from "./domain/candidate.js";
 export * from "./domain/post.js";
 export * from "./domain/metric-snapshot.js";
+export * from "./domain/click-tracking-link.js";
+export * from "./domain/click-event.js";
 export * from "./domain/daily-posting-plan.js";
 export * from "./schemas/idea-payloads.js";
 export * from "./schemas/candidate-payloads.js";

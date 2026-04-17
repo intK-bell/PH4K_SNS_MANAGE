@@ -66,9 +66,9 @@ export class DynamoPostRepository {
   }
 
   async createPost(
-    input: Omit<Post, "postId" | "updatedAt">,
+    input: Omit<Post, "updatedAt"> & { postId?: string },
   ): Promise<Post> {
-    const postId = randomUUID();
+    const postId = input.postId ?? randomUUID();
     const item: Post & { pk: string; sk: string } = {
       ...input,
       postId,
@@ -97,7 +97,6 @@ export class DynamoPostRepository {
       | "latestReplies"
       | "latestReposts"
       | "latestBookmarks"
-      | "latestUrlLinkClicks"
     >,
   ): Promise<Post | null> {
     const result = await this.client.send(
@@ -108,7 +107,7 @@ export class DynamoPostRepository {
           sk: postId,
         },
         UpdateExpression:
-          "SET latestImpressions = :latestImpressions, latestLikes = :latestLikes, latestReplies = :latestReplies, latestReposts = :latestReposts, latestBookmarks = :latestBookmarks, latestUrlLinkClicks = :latestUrlLinkClicks, updatedAt = :updatedAt",
+          "SET latestImpressions = :latestImpressions, latestLikes = :latestLikes, latestReplies = :latestReplies, latestReposts = :latestReposts, latestBookmarks = :latestBookmarks, updatedAt = :updatedAt",
         ConditionExpression: "attribute_exists(sk)",
         ExpressionAttributeValues: {
           ":latestImpressions": metrics.latestImpressions,
@@ -116,7 +115,6 @@ export class DynamoPostRepository {
           ":latestReplies": metrics.latestReplies,
           ":latestReposts": metrics.latestReposts,
           ":latestBookmarks": metrics.latestBookmarks,
-          ":latestUrlLinkClicks": metrics.latestUrlLinkClicks,
           ":updatedAt": new Date().toISOString(),
         },
         ReturnValues: "ALL_NEW",

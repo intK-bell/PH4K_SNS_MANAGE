@@ -3,6 +3,7 @@ export * from "./dynamodb/idea-repository.js";
 export * from "./dynamodb/candidate-repository.js";
 export * from "./dynamodb/post-repository.js";
 export * from "./dynamodb/metric-repository.js";
+export * from "./dynamodb/click-tracking-repository.js";
 export * from "./logger/structured-logger.js";
 export * from "./lambda/worker-invoker.js";
 export * from "./scheduler/metric-fetch-scheduler.js";

@@ -2,6 +2,7 @@ import type { ApiGatewayEvent, ApiResponse } from "./lib/api-types.js";
 import { listCandidates } from "./handlers/candidates/list-candidates.js";
 import { retryLinePush } from "./handlers/candidates/retry-line-push.js";
 import { updateCandidate } from "./handlers/candidates/update-candidate.js";
+import { redirectClick } from "./handlers/clicks/redirect-click.js";
 import { createIdea } from "./handlers/ideas/create-idea.js";
 import { getIdea } from "./handlers/ideas/get-idea.js";
 import { listIdeas } from "./handlers/ideas/list-ideas.js";
@@ -73,6 +74,11 @@ const routes = [
     method: "POST",
     pattern: /^\/webhooks\/line$/,
     handler: async (event: ApiGatewayEvent) => handleLineWebhook(event),
+  },
+  {
+    method: "GET",
+    pattern: /^\/r\/[^/]+$/,
+    handler: async (event: ApiGatewayEvent) => redirectClick(event),
   },
 ];
 

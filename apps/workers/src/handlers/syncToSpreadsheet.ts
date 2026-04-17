@@ -4,6 +4,7 @@ import type { AnalysisRow, IdeaBacklogRow, PostManagementRow } from "@ph4k/core"
 import { loadEnv } from "@ph4k/config";
 import {
   createLogger,
+  DynamoClickTrackingRepository,
   createDynamoDocumentClient,
   DynamoCandidateRepository,
   DynamoIdeaRepository,
@@ -17,10 +18,20 @@ const client = createDynamoDocumentClient(env.awsRegion);
 const postRepository = new DynamoPostRepository(client, env.postsTableName);
 const candidateRepository = new DynamoCandidateRepository(client, env.candidatesTableName);
 const ideaRepository = new DynamoIdeaRepository(client, env.ideasTableName);
+const clickTrackingRepository = new DynamoClickTrackingRepository(client, env.clicksTableName);
 const sheetsClient = new GoogleSheetsClient({
   clientEmail: env.googleServiceAccountEmail,
   privateKey: env.googleServiceAccountPrivateKey,
   spreadsheetId: env.googleSpreadsheetId,
+});
+const JST_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
 });
 
 const formatLikeRate = (likes: number | null, impressions: number | null): string => {
@@ -28,6 +39,25 @@ const formatLikeRate = (likes: number | null, impressions: number | null): strin
     return "";
   }
   return `${((likes / impressions) * 100).toFixed(2)}%`;
+};
+
+const formatDateTimeJst = (value: string | null): string => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const parts = Object.fromEntries(
+    JST_DATE_TIME_FORMATTER.formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  ) as Record<string, string>;
+
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} JST`;
 };
 
 const safeAverage = (values: number[]): string => {
@@ -41,9 +71,10 @@ const buildRow = (
   post: NonNullable<Awaited<ReturnType<typeof postRepository.getPost>>>,
   candidate: NonNullable<Awaited<ReturnType<typeof candidateRepository.getCandidate>>>,
   idea: NonNullable<Awaited<ReturnType<typeof ideaRepository.getIdea>>>,
+  clickCount: number,
 ): PostManagementRow => ({
   id: post.postId,
-  postedDate: post.postedAt ?? "",
+  postedDate: formatDateTimeJst(post.postedAt),
   type: candidate.type,
   ideaTitle: idea.title,
   hook: candidate.hook,
@@ -53,7 +84,7 @@ const buildRow = (
   likes: post.latestLikes?.toString() ?? "",
   bookmarks: post.latestBookmarks?.toString() ?? "",
   replies: post.latestReplies?.toString() ?? "",
-  urlLinkClicks: post.latestUrlLinkClicks?.toString() ?? "",
+  urlLinkClicks: String(clickCount),
   likeRate: formatLikeRate(post.latestLikes, post.latestImpressions),
   evaluation: "",
   horizontalExpansion: "",
@@ -65,6 +96,7 @@ const buildAnalysisRows = (
   posts: Array<NonNullable<Awaited<ReturnType<typeof postRepository.getPost>>>>,
   candidatesById: Map<string, NonNullable<Awaited<ReturnType<typeof candidateRepository.getCandidate>>>>,
   ideasById: Map<string, NonNullable<Awaited<ReturnType<typeof ideaRepository.getIdea>>>>,
+  clickCountsByPostId: Map<string, number>,
 ): AnalysisRow[] => {
   const grouped = new Map<
     string,
@@ -113,8 +145,8 @@ const buildAnalysisRows = (
       .map((post) => post.latestReplies)
       .filter((value): value is number => value !== null);
     const urlLinkClicks = targetPosts
-      .map((post) => post.latestUrlLinkClicks)
-      .filter((value): value is number => value !== null);
+      .map((post) => clickCountsByPostId.get(post.postId) ?? 0)
+      .filter((value): value is number => value >= 0);
     const likeRates = targetPosts
       .map((post) =>
         post.latestLikes !== null &&
@@ -139,7 +171,7 @@ const buildAnalysisRows = (
       averageReplies: safeAverage(replies),
       averageUrlLinkClicks: safeAverage(urlLinkClicks),
       averageLikeRate: likeRates.length > 0 ? `${safeAverage(likeRates)}%` : "",
-      latestPostedDate: latestPost?.postedAt ?? "",
+      latestPostedDate: formatDateTimeJst(latestPost?.postedAt ?? null),
       latestIdeaTitle,
       latestPostId: latestPost?.postId ?? "",
     };
@@ -212,7 +244,8 @@ export const handler = async (event: unknown) => {
     throw new Error("idea not found");
   }
 
-  const row = buildRow(post, candidate, idea);
+  const currentClickCount = await clickTrackingRepository.countClicks(post.postId);
+  const row = buildRow(post, candidate, idea, currentClickCount);
   const attemptedAt = new Date();
 
   try {
@@ -241,6 +274,11 @@ export const handler = async (event: unknown) => {
       ideaIds.map((ideaId) => ideaRepository.getIdea(ideaId)),
     );
     const listedIdeas = await ideaRepository.listIdeas();
+    const clickCountsByPostId = new Map(
+      await Promise.all(
+        allPosts.map(async (item) => [item.postId, await clickTrackingRepository.countClicks(item.postId)] as const),
+      ),
+    );
 
     const candidatesById = new Map(
       allCandidates
@@ -253,7 +291,7 @@ export const handler = async (event: unknown) => {
         .map((item) => [item.ideaId, item]),
     );
 
-    const analysisRows = buildAnalysisRows(allPosts, candidatesById, ideasById);
+    const analysisRows = buildAnalysisRows(allPosts, candidatesById, ideasById, clickCountsByPostId);
     const analysisResult = await retry(() => sheetsClient.replaceAnalysisRows(analysisRows), {
       attempts: 3,
       initialDelayMs: 1000,

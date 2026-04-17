@@ -47,4 +47,5 @@ new ApplicationStack(app, "Ph4kSnsApplicationStack", {
   candidatesTable: dataStack.candidatesTable,
   postsTable: dataStack.postsTable,
   metricsTable: dataStack.metricsTable,
+  clicksTable: dataStack.clicksTable,
 });

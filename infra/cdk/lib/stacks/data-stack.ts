@@ -12,6 +12,7 @@ export class DataStack extends Stack {
   readonly candidatesTable: Table;
   readonly postsTable: Table;
   readonly metricsTable: Table;
+  readonly clicksTable: Table;
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -98,6 +99,33 @@ export class DataStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    this.clicksTable = new Table(this, "ClicksTable", {
+      tableName: "clicks-dev",
+      partitionKey: {
+        name: "pk",
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: "sk",
+        type: AttributeType.STRING,
+      },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.clicksTable.addGlobalSecondaryIndex({
+      indexName: "shortIdIndex",
+      partitionKey: {
+        name: "shortId",
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: "sk",
+        type: AttributeType.STRING,
+      },
+      projectionType: ProjectionType.ALL,
     });
   }
 }

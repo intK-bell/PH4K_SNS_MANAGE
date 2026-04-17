@@ -16,3 +16,12 @@ export const json = (statusCode: number, data: unknown): ApiResponse => ({
   },
   body: JSON.stringify(data),
 });
+
+export const redirect = (location: string, statusCode = 302): ApiResponse => ({
+  statusCode,
+  headers: {
+    location,
+    "content-type": "text/plain; charset=utf-8",
+  },
+  body: "",
+});

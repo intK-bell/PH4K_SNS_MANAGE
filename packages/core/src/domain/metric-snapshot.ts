@@ -6,6 +6,5 @@ export interface MetricSnapshot {
   replies: number;
   reposts: number;
   bookmarks: number;
-  urlLinkClicks: number;
   quoteCount: number | null;
 }

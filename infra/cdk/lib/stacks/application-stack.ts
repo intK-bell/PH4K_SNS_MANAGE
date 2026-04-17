@@ -22,6 +22,7 @@ interface ApplicationStackProps extends StackProps {
   candidatesTable: Table;
   postsTable: Table;
   metricsTable: Table;
+  clicksTable: Table;
 }
 
 export class ApplicationStack extends Stack {
@@ -67,6 +68,7 @@ export class ApplicationStack extends Stack {
         IDEAS_TABLE_NAME: props.ideasTable.tableName,
         CANDIDATES_TABLE_NAME: props.candidatesTable.tableName,
         POSTS_TABLE_NAME: props.postsTable.tableName,
+        CLICKS_TABLE_NAME: props.clicksTable.tableName,
         LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
         LINE_CHANNEL_SECRET: process.env.LINE_CHANNEL_SECRET ?? "",
         LINE_USER_ID: process.env.LINE_USER_ID ?? "",
@@ -116,6 +118,7 @@ export class ApplicationStack extends Stack {
       environment: {
         CANDIDATES_TABLE_NAME: props.candidatesTable.tableName,
         POSTS_TABLE_NAME: props.postsTable.tableName,
+        CLICKS_TABLE_NAME: props.clicksTable.tableName,
         X_API_KEY: process.env.X_API_KEY ?? "",
         X_API_KEY_SECRET: process.env.X_API_KEY_SECRET ?? "",
         X_ACCESS_TOKEN: process.env.X_ACCESS_TOKEN ?? "",
@@ -123,6 +126,7 @@ export class ApplicationStack extends Stack {
         X_BEARER_TOKEN: process.env.X_BEARER_TOKEN ?? "",
         APP_BASE_URL: process.env.APP_BASE_URL ?? "",
         LP_LANDING_URL: process.env.LP_LANDING_URL ?? "",
+        CLICK_TRACKING_BASE_URL: process.env.CLICK_TRACKING_BASE_URL ?? "",
       },
     });
 
@@ -149,6 +153,7 @@ export class ApplicationStack extends Stack {
       environment: {
         POSTS_TABLE_NAME: props.postsTable.tableName,
         METRICS_TABLE_NAME: props.metricsTable.tableName,
+        CLICKS_TABLE_NAME: props.clicksTable.tableName,
         IDEAS_TABLE_NAME: props.ideasTable.tableName,
         CANDIDATES_TABLE_NAME: props.candidatesTable.tableName,
         GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "",
@@ -187,17 +192,20 @@ export class ApplicationStack extends Stack {
     props.ideasTable.grantReadWriteData(apiHandler);
     props.candidatesTable.grantReadWriteData(apiHandler);
     props.postsTable.grantReadWriteData(apiHandler);
+    props.clicksTable.grantReadWriteData(apiHandler);
     props.ideasTable.grantReadWriteData(generateCandidatesHandler);
     props.candidatesTable.grantReadWriteData(generateCandidatesHandler);
     props.candidatesTable.grantReadWriteData(pushCandidatesToLineHandler);
     props.candidatesTable.grantReadWriteData(publishSelectedPostHandler);
     props.postsTable.grantReadWriteData(publishSelectedPostHandler);
+    props.clicksTable.grantReadWriteData(publishSelectedPostHandler);
     props.postsTable.grantReadWriteData(fetchPostMetricsHandler);
     props.metricsTable.grantReadWriteData(fetchPostMetricsHandler);
     props.postsTable.grantReadWriteData(syncToSpreadsheetHandler);
     props.metricsTable.grantReadWriteData(syncToSpreadsheetHandler);
     props.candidatesTable.grantReadData(syncToSpreadsheetHandler);
     props.ideasTable.grantReadData(syncToSpreadsheetHandler);
+    props.clicksTable.grantReadData(syncToSpreadsheetHandler);
     props.postsTable.grantReadWriteData(createMetricFetchScheduleHandler);
     createMetricFetchScheduleHandler.addToRolePolicy(
       new PolicyStatement({

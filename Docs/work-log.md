@@ -273,3 +273,16 @@
 - `XMetricsClient` を OAuth 1.0a user-context 署名つき GET に対応させ、`organic_metrics.url_link_clicks` を優先して `non_public_metrics.url_link_clicks` も拾えるようにした
 - `MetricSnapshot` と `Post` に `urlLinkClicks / latestUrlLinkClicks` を追加し、metrics 保存・latest 値更新・worker ログ出力まで一貫して流れるようにした
 - Google Sheets の `投稿管理` に `リンククリック`、`分析` に `平均リンククリック` を追加し、既存シートでもヘッダが自動更新されるように `ensureSheets` を見直した
+- Google Sheets 上の日時表示は UTC のままやったため、`投稿日` と `最新投稿日` を `YYYY-MM-DD HH:mm JST` 形式へ変換して書き込むように変更した
+- 20:23 の 1h metrics 実行で `non_public_metrics` 権限不足により全体が失敗し、Sheets 同期まで止まることを確認した
+- これを受けて、X metrics は `public_metrics` を本取得、`non_public_metrics / organic_metrics` のリンククリックは別リクエストのベストエフォート取得へ分離し、権限不足でも `metrics / Sheets` 全体は流れるように修正した
+- X 標準の `URL clicks` 依存を避ける回避策として、`https://ph4k.aokigk.com/r/{shortId}` 形式の自前 click tracking を採用する方針を整理した
+- implementation-plan に `click mapping / click events / 302 redirect / 投稿本文の短縮計測URL化` を含む最小構成を追記し、今後の実装順を明文化した
+- `clicks` 専用 DynamoDB table と `shortIdIndex` GSI を追加し、`postId` 単位の mapping と click events を同じ table に保存する最小構成を実装した
+- API Lambda に `GET /r/{shortId}` redirect endpoint を追加し、shortId から mapping を引いて click event を保存した後に LP へ `302 redirect` するようにした
+- `publishSelectedPost` では shortId を生成して click mapping を保存し、投稿本文の LP リンクを `APP_BASE_URL` または `CLICK_TRACKING_BASE_URL` ベースの `/r/{shortId}` へ差し替えるようにした
+- `syncToSpreadsheet` では click table の count を参照し、`投稿管理` の `リンククリック` と `分析` の `平均リンククリック` に自前 click 数を反映するようにした
+- `CLICK_TRACKING_BASE_URL` を未設定の場合は `APP_BASE_URL` を使う fallback とし、独自ドメインを後から向け替えられるようにした
+- X 標準の `url_link_clicks` 取得は権限制約と運用複雑化のわりに不安定やったため、X metrics 側の拡張は撤回し、再び `public_metrics` のみを取得する実装へ戻した
+- `MetricSnapshot / Post / fetchPostMetrics / postRepository` から X 由来の `urlLinkClicks / latestUrlLinkClicks` 追加分を取り除き、自前 click tracking と責務を分離した
+- これにより、X metrics は `impressions / likes / replies / reposts / bookmarks / quoteCount` のみ、クリック数は `clicks` table 正本という構成に整理した

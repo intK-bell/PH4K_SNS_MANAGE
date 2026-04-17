@@ -5,6 +5,7 @@ export interface AppEnv {
   candidatesTableName: string;
   postsTableName: string;
   metricsTableName: string;
+  clicksTableName: string;
   lineChannelAccessToken: string;
   lineChannelSecret: string;
   lineUserId: string;
@@ -28,9 +29,26 @@ export interface AppEnv {
   openAiModel: string;
   openAiPromptVersion: string;
   lpLandingUrl: string;
+  clickTrackingBaseUrl: string;
   enableXPublish: boolean;
   logLevel: string;
 }
+
+const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/$/, "");
+
+const resolveClickTrackingBaseUrl = (): string => {
+  const explicitBaseUrl = process.env.CLICK_TRACKING_BASE_URL ?? "";
+  if (explicitBaseUrl.trim() !== "") {
+    return normalizeBaseUrl(explicitBaseUrl);
+  }
+
+  const appBaseUrl = process.env.APP_BASE_URL ?? "";
+  if (appBaseUrl.trim() !== "") {
+    return normalizeBaseUrl(appBaseUrl);
+  }
+
+  return "";
+};
 
 export const loadEnv = (): AppEnv => ({
   awsRegion: process.env.AWS_REGION ?? "ap-northeast-1",
@@ -39,6 +57,7 @@ export const loadEnv = (): AppEnv => ({
   candidatesTableName: process.env.CANDIDATES_TABLE_NAME ?? "candidates-dev",
   postsTableName: process.env.POSTS_TABLE_NAME ?? "posts-dev",
   metricsTableName: process.env.METRICS_TABLE_NAME ?? "metrics-dev",
+  clicksTableName: process.env.CLICKS_TABLE_NAME ?? "clicks-dev",
   lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
   lineChannelSecret: process.env.LINE_CHANNEL_SECRET ?? "",
   lineUserId: process.env.LINE_USER_ID ?? "",
@@ -63,6 +82,7 @@ export const loadEnv = (): AppEnv => ({
   openAiPromptVersion: process.env.OPENAI_PROMPT_VERSION ?? "v1",
   lpLandingUrl:
     process.env.LP_LANDING_URL ?? "https://ph4k.aokigk.com/landing",
+  clickTrackingBaseUrl: resolveClickTrackingBaseUrl(),
   enableXPublish: process.env.ENABLE_X_PUBLISH !== "false",
   logLevel: process.env.LOG_LEVEL ?? "info",
 });
