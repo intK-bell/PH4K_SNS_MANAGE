@@ -14,8 +14,11 @@ const client = createDynamoDocumentClient(env.awsRegion);
 const postRepository = new DynamoPostRepository(client, env.postsTableName);
 const metricRepository = new DynamoMetricRepository(client, env.metricsTableName);
 const xMetricsClient = new XMetricsClient({
+  apiKey: env.xApiKey,
+  apiKeySecret: env.xApiKeySecret,
   bearerToken: env.xBearerToken,
   accessToken: env.xAccessToken,
+  accessTokenSecret: env.xAccessTokenSecret,
 });
 
 export const handler = async (event: unknown) => {
@@ -58,6 +61,7 @@ export const handler = async (event: unknown) => {
       latestReplies: snapshot.replies,
       latestReposts: snapshot.reposts,
       latestBookmarks: snapshot.bookmarks,
+      latestUrlLinkClicks: snapshot.urlLinkClicks,
     });
 
     logger.info("metrics fetch completed", {
@@ -68,6 +72,7 @@ export const handler = async (event: unknown) => {
       replies: snapshot.replies,
       reposts: snapshot.reposts,
       bookmarks: snapshot.bookmarks,
+      urlLinkClicks: snapshot.urlLinkClicks,
       durationMs: Date.now() - startedAt,
     });
 

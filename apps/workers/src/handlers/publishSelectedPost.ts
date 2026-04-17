@@ -67,6 +67,7 @@ export const handler = async (event: unknown) => {
     latestReplies: null,
     latestReposts: null,
     latestBookmarks: null,
+    latestUrlLinkClicks: null,
     spreadsheetSyncStatus: "pending",
     spreadsheetSyncAttempts: 0,
     spreadsheetLastSyncedAt: null,

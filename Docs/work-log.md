@@ -269,3 +269,7 @@
 - `これにする！` 押下後に確認カードが返らず、displayText だけチャットに残る現象が出たため、確認メッセージの LINE buttons template 制約を疑って見直した
 - 確認メッセージを buttons template から `flex bubble` へ切り替え、`投稿しますか？ / hook / 本文 / はい / いいえ` を安全に返せる構成へ変更した
 - 上記の確認カード fix を `pnpm -r build` 後に `Ph4kSnsApplicationStack` へ再デプロイして本番反映した
+- X の `public_metrics` だけではリンククリック数を拾っていなかったため、X metrics 取得を `public_metrics, non_public_metrics, organic_metrics` を見る構成へ拡張する方針にした
+- `XMetricsClient` を OAuth 1.0a user-context 署名つき GET に対応させ、`organic_metrics.url_link_clicks` を優先して `non_public_metrics.url_link_clicks` も拾えるようにした
+- `MetricSnapshot` と `Post` に `urlLinkClicks / latestUrlLinkClicks` を追加し、metrics 保存・latest 値更新・worker ログ出力まで一貫して流れるようにした
+- Google Sheets の `投稿管理` に `リンククリック`、`分析` に `平均リンククリック` を追加し、既存シートでもヘッダが自動更新されるように `ensureSheets` を見直した

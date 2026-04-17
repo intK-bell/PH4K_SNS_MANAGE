@@ -30,6 +30,7 @@ const POST_MANAGEMENT_HEADERS = [
   "いいね",
   "保存",
   "コメント",
+  "リンククリック",
   "いいね率",
   "評価",
   "横展開",
@@ -45,6 +46,7 @@ const ANALYSIS_HEADERS = [
   "平均いいね",
   "平均保存",
   "平均コメント",
+  "平均リンククリック",
   "平均いいね率",
   "最新投稿日",
   "最新ネタ",
@@ -76,6 +78,7 @@ const rowToValues = (row: PostManagementRow): string[] => [
   row.likes,
   row.bookmarks,
   row.replies,
+  row.urlLinkClicks,
   row.likeRate,
   row.evaluation,
   row.horizontalExpansion,
@@ -91,6 +94,7 @@ const analysisRowToValues = (row: AnalysisRow): string[] => [
   row.averageLikes,
   row.averageBookmarks,
   row.averageReplies,
+  row.averageUrlLinkClicks,
   row.averageLikeRate,
   row.latestPostedDate,
   row.latestIdeaTitle,
@@ -490,44 +494,23 @@ export class GoogleSheetsClient {
     const refreshedSheetProperties =
       requests.length > 0 ? await this.listSheetProperties() : sheetProperties;
 
-    const values = await this.request<{ values?: string[][] }>(
-      "GET",
-      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:P1",
-    );
+    await this.request("PUT", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:Q1?valueInputOption=RAW", {
+      range: "投稿管理!A1:Q1",
+      majorDimension: "ROWS",
+      values: [POST_MANAGEMENT_HEADERS],
+    });
 
-    if (!values.values?.length) {
-      await this.request("PUT", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:P1?valueInputOption=RAW", {
-        range: "投稿管理!A1:P1",
-        majorDimension: "ROWS",
-        values: [POST_MANAGEMENT_HEADERS],
-      });
-    }
+    await this.request("PUT", "values/%E5%88%86%E6%9E%90!A1:L1?valueInputOption=RAW", {
+      range: "分析!A1:L1",
+      majorDimension: "ROWS",
+      values: [ANALYSIS_HEADERS],
+    });
 
-    const analysisValues = await this.request<{ values?: string[][] }>(
-      "GET",
-      "values/%E5%88%86%E6%9E%90!A1:K1",
-    );
-
-    if (!analysisValues.values?.length) {
-      await this.request("PUT", "values/%E5%88%86%E6%9E%90!A1:K1?valueInputOption=RAW", {
-        range: "分析!A1:K1",
-        majorDimension: "ROWS",
-        values: [ANALYSIS_HEADERS],
-      });
-    }
-
-    const ideaBacklogValues = await this.request<{ values?: string[][] }>(
-      "GET",
-      "values/%E3%83%8D%E3%82%BF%E5%B8%B3!A1:J1",
-    );
-
-    if (!ideaBacklogValues.values?.length) {
-      await this.request("PUT", "values/%E3%83%8D%E3%82%BF%E5%B8%B3!A1:J1?valueInputOption=RAW", {
-        range: "ネタ帳!A1:J1",
-        majorDimension: "ROWS",
-        values: [IDEA_BACKLOG_HEADERS],
-      });
-    }
+    await this.request("PUT", "values/%E3%83%8D%E3%82%BF%E5%B8%B3!A1:J1?valueInputOption=RAW", {
+      range: "ネタ帳!A1:J1",
+      majorDimension: "ROWS",
+      values: [IDEA_BACKLOG_HEADERS],
+    });
 
     return refreshedSheetProperties;
   }
@@ -537,11 +520,11 @@ export class GoogleSheetsClient {
       requests: [
         buildFrozenHeaderRequest(sheetId),
         buildHeaderStyleRequest(sheetId, ANALYSIS_HEADERS.length),
-        ...buildColumnWidthRequests(sheetId, [110, 150, 90, 150, 110, 110, 110, 120, 160, 240, 180]),
+        ...buildColumnWidthRequests(sheetId, [110, 150, 90, 150, 110, 110, 110, 120, 130, 160, 240, 180]),
         ...buildBodyAlignmentRequest(sheetId, ANALYSIS_HEADERS.length, {
-          centerColumns: [0, 1, 2, 8],
-          rightColumns: [3, 4, 5, 6, 7],
-          wrapColumns: [9, 10],
+          centerColumns: [0, 1, 2, 9],
+          rightColumns: [3, 4, 5, 6, 7, 8],
+          wrapColumns: [10, 11],
         }),
         buildBasicFilterRequest(sheetId, ANALYSIS_HEADERS.length),
         buildAnalysisTotalRowStyleRequest(sheetId),
@@ -567,6 +550,7 @@ export class GoogleSheetsClient {
           95,
           95,
           110,
+          110,
           100,
           120,
           220,
@@ -574,8 +558,8 @@ export class GoogleSheetsClient {
         ]),
         ...buildBodyAlignmentRequest(sheetId, POST_MANAGEMENT_HEADERS.length, {
           centerColumns: [1, 2, 6],
-          rightColumns: [7, 8, 9, 10, 11],
-          wrapColumns: [3, 4, 5, 14, 15],
+          rightColumns: [7, 8, 9, 10, 11, 12],
+          wrapColumns: [3, 4, 5, 15, 16],
         }),
         buildBasicFilterRequest(sheetId, POST_MANAGEMENT_HEADERS.length),
         buildPostStatusHighlightRequest(sheetId),
@@ -625,9 +609,9 @@ export class GoogleSheetsClient {
     if (rowIndex) {
       await this.request(
         "PUT",
-        `values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A${rowIndex}:P${rowIndex}?valueInputOption=RAW`,
+        `values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A${rowIndex}:Q${rowIndex}?valueInputOption=RAW`,
         {
-          range: `投稿管理!A${rowIndex}:P${rowIndex}`,
+          range: `投稿管理!A${rowIndex}:Q${rowIndex}`,
           majorDimension: "ROWS",
           values,
         },
@@ -641,9 +625,9 @@ export class GoogleSheetsClient {
 
     await this.request(
       "POST",
-      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A:P:append?valueInputOption=RAW",
+      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A:Q:append?valueInputOption=RAW",
       {
-        range: "投稿管理!A:P",
+        range: "投稿管理!A:Q",
         majorDimension: "ROWS",
         values,
       },
@@ -665,12 +649,12 @@ export class GoogleSheetsClient {
     const sheetProperties = await this.ensureSheets();
     await this.request(
       "POST",
-      "values/%E5%88%86%E6%9E%90!A2:K:clear",
+      "values/%E5%88%86%E6%9E%90!A2:L:clear",
       {},
     );
 
     const values = rows.map((row) => analysisRowToValues(row));
-    const analysisRange = `分析!A2:K${Math.max(rows.length + 1, 2)}`;
+    const analysisRange = `分析!A2:L${Math.max(rows.length + 1, 2)}`;
     await this.request(
       "PUT",
       `values/${encodeURIComponent(analysisRange)}?valueInputOption=RAW`,

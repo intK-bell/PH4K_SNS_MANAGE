@@ -19,6 +19,7 @@ export interface PostManagementRow {
   likes: string;
   bookmarks: string;
   replies: string;
+  urlLinkClicks: string;
   likeRate: string;
   evaluation: string;
   horizontalExpansion: string;
@@ -34,6 +35,7 @@ export interface AnalysisRow {
   averageLikes: string;
   averageBookmarks: string;
   averageReplies: string;
+  averageUrlLinkClicks: string;
   averageLikeRate: string;
   latestPostedDate: string;
   latestIdeaTitle: string;

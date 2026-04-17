@@ -53,6 +53,7 @@ const buildRow = (
   likes: post.latestLikes?.toString() ?? "",
   bookmarks: post.latestBookmarks?.toString() ?? "",
   replies: post.latestReplies?.toString() ?? "",
+  urlLinkClicks: post.latestUrlLinkClicks?.toString() ?? "",
   likeRate: formatLikeRate(post.latestLikes, post.latestImpressions),
   evaluation: "",
   horizontalExpansion: "",
@@ -111,6 +112,9 @@ const buildAnalysisRows = (
     const replies = targetPosts
       .map((post) => post.latestReplies)
       .filter((value): value is number => value !== null);
+    const urlLinkClicks = targetPosts
+      .map((post) => post.latestUrlLinkClicks)
+      .filter((value): value is number => value !== null);
     const likeRates = targetPosts
       .map((post) =>
         post.latestLikes !== null &&
@@ -133,6 +137,7 @@ const buildAnalysisRows = (
       averageLikes: safeAverage(likes),
       averageBookmarks: safeAverage(bookmarks),
       averageReplies: safeAverage(replies),
+      averageUrlLinkClicks: safeAverage(urlLinkClicks),
       averageLikeRate: likeRates.length > 0 ? `${safeAverage(likeRates)}%` : "",
       latestPostedDate: latestPost?.postedAt ?? "",
       latestIdeaTitle,

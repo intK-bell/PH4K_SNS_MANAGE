@@ -14,6 +14,7 @@ export interface Post {
   latestReplies: number | null;
   latestReposts: number | null;
   latestBookmarks: number | null;
+  latestUrlLinkClicks: number | null;
   spreadsheetSyncStatus: "pending" | "synced" | "failed";
   spreadsheetSyncAttempts: number;
   spreadsheetLastSyncedAt: string | null;
