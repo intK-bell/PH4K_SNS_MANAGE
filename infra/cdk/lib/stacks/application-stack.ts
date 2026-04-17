@@ -70,6 +70,7 @@ export class ApplicationStack extends Stack {
         LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
         LINE_CHANNEL_SECRET: process.env.LINE_CHANNEL_SECRET ?? "",
         LINE_USER_ID: process.env.LINE_USER_ID ?? "",
+        ENABLE_X_PUBLISH: process.env.ENABLE_X_PUBLISH ?? "true",
         CANDIDATE_DELIVERY_STATE_MACHINE_ARN: "",
         POST_PUBLISH_STATE_MACHINE_ARN: "",
         PUSH_CANDIDATES_TO_LINE_LAMBDA_ARN: "",
@@ -86,6 +87,8 @@ export class ApplicationStack extends Stack {
       environment: {
         IDEAS_TABLE_NAME: props.ideasTable.tableName,
         CANDIDATES_TABLE_NAME: props.candidatesTable.tableName,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+        OPENAI_MODEL: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
         OPENAI_PROMPT_VERSION: process.env.OPENAI_PROMPT_VERSION ?? "v1",
         LP_LANDING_URL: process.env.LP_LANDING_URL ?? "",
       },

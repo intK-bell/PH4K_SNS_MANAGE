@@ -4,6 +4,7 @@ import type { CandidateStatus } from "../constants/statuses.js";
 export interface Candidate {
   candidateId: string;
   ideaId: string;
+  deliveryBatchId: string;
   type: PostType;
   hook: string;
   body: string;

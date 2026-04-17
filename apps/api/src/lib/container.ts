@@ -46,5 +46,7 @@ export const workflowService = new WorkflowService(workflowClient);
 export const webhookService = new WebhookService(
   lineClient,
   candidateRepository,
+  ideaRepository,
   workflowClient,
+  env.enableXPublish,
 );

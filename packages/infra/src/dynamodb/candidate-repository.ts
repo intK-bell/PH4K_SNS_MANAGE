@@ -63,11 +63,19 @@ export class DynamoCandidateRepository {
     return (result.Items ?? []) as Candidate[];
   }
 
+  async listCandidatesByDeliveryBatchId(deliveryBatchId: string): Promise<Candidate[]> {
+    const items = await this.listCandidates();
+    return items
+      .filter((item) => item.deliveryBatchId === deliveryBatchId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
   async createCandidates(
     ideaId: string,
     drafts: GeneratedCandidateDraft[],
   ): Promise<Candidate[]> {
     const created: Candidate[] = [];
+    const deliveryBatchId = randomUUID();
 
     for (const draft of drafts) {
       const timestamp = new Date().toISOString();
@@ -77,6 +85,7 @@ export class DynamoCandidateRepository {
         sk: candidateId,
         candidateId,
         ideaId,
+        deliveryBatchId,
         type: draft.type,
         hook: draft.hook,
         body: draft.body,

@@ -2,6 +2,7 @@ import type { CandidateStatus } from "../constants/statuses.js";
 import type { PostType } from "../constants/post-types.js";
 
 export interface UpdateCandidateInput {
+  deliveryBatchId?: string;
   hook?: string;
   body?: string;
   selected?: boolean;

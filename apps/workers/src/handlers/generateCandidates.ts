@@ -8,6 +8,8 @@ const client = createDynamoDocumentClient(env.awsRegion);
 const ideaRepository = new DynamoIdeaRepository(client, env.ideasTableName);
 const candidateRepository = new DynamoCandidateRepository(client, env.candidatesTableName);
 const generator = new OpenAiCandidateGenerator(
+  env.openAiApiKey,
+  env.openAiModel,
   env.openAiPromptVersion,
   env.lpLandingUrl,
 );

@@ -28,6 +28,7 @@ export interface AppEnv {
   openAiModel: string;
   openAiPromptVersion: string;
   lpLandingUrl: string;
+  enableXPublish: boolean;
   logLevel: string;
 }
 
@@ -62,5 +63,6 @@ export const loadEnv = (): AppEnv => ({
   openAiPromptVersion: process.env.OPENAI_PROMPT_VERSION ?? "v1",
   lpLandingUrl:
     process.env.LP_LANDING_URL ?? "https://ph4k.aokigk.com/landing",
+  enableXPublish: process.env.ENABLE_X_PUBLISH !== "false",
   logLevel: process.env.LOG_LEVEL ?? "info",
 });

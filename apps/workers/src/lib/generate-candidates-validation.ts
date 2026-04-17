@@ -6,7 +6,7 @@ export const validateGenerateCandidatesInput = (input: unknown): GenerateCandida
   }
 
   const candidate = input as Record<string, unknown>;
-  const count = typeof candidate.count === "number" ? candidate.count : 3;
+  const count = typeof candidate.count === "number" ? candidate.count : 5;
 
   if (typeof candidate.ideaId !== "string" || candidate.ideaId.trim() === "") {
     throw new Error("ideaId is required");

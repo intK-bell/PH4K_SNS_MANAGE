@@ -5,11 +5,13 @@ export const CANDIDATE_STATUSES = [
   "generated",
   "queued_for_line",
   "sent_to_line",
+  "confirming",
   "pending",
   "posted",
   "held",
   "discarded",
   "regenerating",
+  "closed",
   "error",
 ] as const;
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];

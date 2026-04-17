@@ -211,3 +211,61 @@
 - rerun 投稿は `externalPostId=2044813970889216242`、`postId=bc5f04ac-2bb6-48d0-a63f-cc50ef263617` として保存された
 - `metric-sync` を手動実行した結果、metrics 取得・投稿管理シート upsert・分析シート更新・ネタ帳シート更新まで成功し、`spreadsheetSyncStatus=synced` を確認した
 - 旧投稿 `postId=4e4f0c87-133c-42c5-b893-1c1ea841eea5` は過去の失敗記録として `spreadsheetSyncStatus=failed` のまま残っているが、新しい rerun 投稿では E2E 完走を確認できた
+- 次フェーズ計画として implementation-plan に LINE 候補UIのカルーセル化、選択後確認導線、candidateId ベースの正確投稿保証、運用テスト観点を追記した
+- LINE 候補UIの仕様として、`1候補 = 1カード + これにする！`、最後に `再生成する / 今回は投稿しない / 保留` の全体操作カード、選択後の `投稿しますか？ -> はい / やめる` 確認フローを implementation-plan に追記した
+- LINE 候補UIの方針を更新し、`保留` は廃止、各カードは `これにする！` のみ、最後の全体操作カードは `再生成する / 今回は投稿しない` の2操作に整理した
+- あわせて、1件が選ばれた時点で同じ候補束の他候補は無効化し、古いカードを遡っても再選択できない前提を implementation-plan に反映した
+- LINE 起点トリガーの文言を `Postだお` 案から `種まきだ！ / 収穫だ！` に更新した
+- `種まきだ！` は営業系候補、`収穫だ！` は拡散系候補を生成する方針として implementation-plan に反映した
+- 候補は DynamoDB candidates に保存して再利用する方針と、営業系投稿を日替わり型ローテーションで運用する方針を implementation-plan に追記した
+- `candidates` に `deliveryBatchId` を追加し、1回の候補生成でできた束を backend で追跡できるようにした
+- candidate status に `confirming / closed` を追加し、1件選択後に同一 batch の他候補を無効化できるようにした
+- LINE Messaging client を quick reply から carousel template へ切り替え、`1候補 = 1カード + これにする！`、最後に `再生成する / 今回は投稿しない` の操作カードを出すようにした
+- 候補数が 9 件を超える場合でも carousel を複数メッセージに分割し、最後のメッセージにだけ操作カードを付けるようにした
+- LINE postback action を `select_candidate / confirm_post / cancel_post / regenerate_batch / skip_batch` に整理し、`投稿しますか？ -> はい / やめる` の確認フローを追加した
+- webhook service に LINE `message` event の受付を追加し、`種まきだ！` で営業系、`収穫だ！` で拡散系の candidate-delivery を起動できるようにした
+- 営業系トリガーは `Asia/Tokyo` 基準の曜日ローテーションで `awareness -> overtime -> before_after -> double_question -> light_achievement -> cta -> constraint` を日替わりで使うようにした
+- `種まきだ！ / 収穫だ！` の起動時は reply message で受付を返し、候補本体は Step Functions 後段の LINE push で非同期送信する流れにした
+- `これにする！` 押下時点で candidate batch を閉じて対象候補だけ `confirming` にし、古いカードを遡っても他候補が再選択できないよう backend 判定を追加した
+- `やめる` を押した場合は選択中候補も `closed` にし、この batch は再利用せず `再生成する` で新しい束を取り直す前提に整理した
+- `今回は投稿しない` は batch 全体を `closed` にして終了、`再生成する` は batch を閉じた上で同じ `ideaId / type / count` で candidate-delivery を再起動するようにした
+- 以上の実装後に `pnpm -r build` を実行し、workspace 全体の TypeScript build 成功を確認した
+- `Ph4kSnsApplicationStack` を再デプロイし、最新の LINE webhook / Ideas API / worker Lambda を本番環境へ反映した
+- 再デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- `種まきだ！` 実行時の candidate-delivery 失敗を Step Functions から確認し、LINE carousel template が `全カラムで action 数を揃える必要あり` の制約で `400` を返していたことを特定した
+- 候補カード1ボタン・操作カード2ボタンの UX を維持するため、LINE 候補一覧を template carousel から `flex carousel` に切り替えた
+- `pnpm -r build` で修正後の build 成功を確認し、`Ph4kSnsApplicationStack` を再デプロイして webhook / pushCandidatesToLine の fix を本番へ反映した
+- 生成方針を更新し、`種まきだ！` の曜日ローテーションを `月:気づき / 火:残業 / 水:Before/After / 木:問いかけ / 金:共感 / 土:CTA / 日:制約` に固定する方針を implementation-plan へ反映した
+- OpenAI 生成仕様として、`種まきだ！ / 収穫だ！` ともに候補数を `5本` に固定し、`hook / body` を持つ JSON 配列で構造化出力を受ける方針を implementation-plan へ追記した
+- すべての候補本文末尾へ `https://ph4k.aokigk.com/landing` を必須付与すること、`種まき` と `収穫` で prompt を分けること、本文は改行多めで読みやすくすることを仕様へ追記した
+- `OpenAiCandidateGenerator` をテンプレ組み立てから OpenAI Responses API 呼び出しへ差し替え、`json_schema` で `items[{hook, body}]` を厳密に受ける実装へ更新した
+- `種まき` 用 prompt は現場担当者向け営業系、`収穫` 用 prompt は拡散特化型として分離し、曜日ローテーションで型ラベルと役割文言を差し込むようにした
+- OpenAI 生成後は `body` の改行を正規化し、LP リンク `https://ph4k.aokigk.com/landing` が欠けとる場合は後段で補完するようにした
+- 候補数の既定値を worker validation と LINE trigger の両方で `5` に変更した
+- `pnpm -r build` で OpenAI 生成ロジック更新後の TypeScript build 成功を確認した
+- `Ph4kSnsApplicationStack` を再デプロイし、最新の OpenAI 生成ロジックと `5件` トリガー設定を本番へ反映した
+- `種まきだ！` 実行後に candidate-delivery が停止したため Step Functions を確認し、`GenerateCandidatesHandler` が `OPENAI_API_KEY is required` で失敗していることを特定した
+- 原因は CDK の `GenerateCandidatesHandler` 環境変数に `OPENAI_API_KEY / OPENAI_MODEL` を渡していなかったことやった
+- `ApplicationStack` の GenerateCandidates Lambda 環境変数へ `OPENAI_API_KEY / OPENAI_MODEL` を追加し、`pnpm -r build` 後に `Ph4kSnsApplicationStack` を再デプロイして修正を本番反映した
+- ユーザー課題を `現場で行った監査の記録・共有・報告が分断されており、帰社後の再整理と報告書作成が大きな負担になっていること` と再定義し、8型はこの単一課題を異なる角度から伝える表現パターンであることを implementation-plan に追記した
+- `気づき喚起 / 残業訴求 / Before/After / 問いかけ / 共感 / CTA / 制約 / 拡散特化` それぞれについて、同じ課題をどう見せるかの説明を implementation-plan に整理した
+- 8型ごとに `hookで何を起こすか / bodyを何段で組むか / 避ける言い回し` を implementation-plan に追記し、生成品質を型単位で固定する設計へ更新した
+- `OpenAiCandidateGenerator` の prompt に型別ルールを実装し、営業系・拡散系の両 prompt で `hook intent / body steps / avoid phrases` を明示するようにした
+- `pnpm -r build` で prompt 固定化後の build 成功を確認し、`Ph4kSnsApplicationStack` を再デプロイして GenerateCandidates Lambda の最新 prompt ルールを本番反映した
+- LINE 候補に `LINE / X / metrics / Sheets` などの内部運用用語が残っていたため、OpenAI prompt に `内部運用用語を本文に出さない` ルールを追加した
+- OpenAI 出力に `https://example.com` のような誤URLが混ざるケースに備え、本文内の URL は LP リンクへ正規化した上で末尾に `https://ph4k.aokigk.com/landing` を担保するようにした
+- `種まきだ！` の idea 選択が E2E テスト用ネタを拾いやすかったため、webhook service で `E2E / LINE / Sheets / metrics / webhook` などの内部キーワードを含む active idea は優先しないようにした
+- 上記の prompt hardening と test idea filtering を `pnpm -r build` 後に `Ph4kSnsApplicationStack` へ再デプロイして本番反映した
+- LINE 候補カードで raw enum の型名が見えていたため、`気づき喚起型 / 共感型 / 拡散特化型` などの日本語ラベルを表示するようにした
+- カード送信前に `今日は○○型だよ。` の案内テキストを追加し、その日の型が先に分かる UX に変更した
+- `Xは投稿しない` 方針に合わせて `ENABLE_X_PUBLISH` 設定を導入し、現状は `false` を既定として `はい` 押下時も X 投稿 workflow を起動せず候補確定だけで止めるようにした
+- `.env.example` と config に `ENABLE_X_PUBLISH` を追加し、CDK の API Lambda 環境変数へも同設定を注入するようにした
+- 以上の UX 変更を `pnpm -r build` 後に `Ph4kSnsApplicationStack` へ再デプロイして本番反映した
+- ユーザー意図を再確認し、`Xは投稿しない` は型表示が本文へ混ざる懸念の話であり、実際の運用フローは `これにする！ -> 投稿しますか？ -> はい / いいえ` の確認つき投稿でよいことを整理した
+- これに合わせて、型表示はカード本文から外して `今日は○○型だよ。` の先頭案内だけへ集約し、カード本体は候補内容だけを見せるように修正した
+- 投稿確認ボタン文言も `はい / やめる` から `はい / いいえ` に変更した
+- `ENABLE_X_PUBLISH` の既定値を `true` に戻し、現状は確認後に通常どおり X 投稿 workflow を起動する挙動へ復帰させた
+- 上記の誤解修正を `pnpm -r build` 後に `Ph4kSnsApplicationStack` へ再デプロイして本番反映した
+- `これにする！` 押下後に確認カードが返らず、displayText だけチャットに残る現象が出たため、確認メッセージの LINE buttons template 制約を疑って見直した
+- 確認メッセージを buttons template から `flex bubble` へ切り替え、`投稿しますか？ / hook / 本文 / はい / いいえ` を安全に返せる構成へ変更した
+- 上記の確認カード fix を `pnpm -r build` 後に `Ph4kSnsApplicationStack` へ再デプロイして本番反映した
