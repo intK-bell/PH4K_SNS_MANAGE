@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
@@ -92,5 +93,30 @@ export class DynamoClickTrackingRepository {
     );
 
     return result.Count ?? 0;
+  }
+
+  async deleteTrackingByPostId(postId: string): Promise<void> {
+    const pk = `${CLICK_LINK_PK_PREFIX}${postId}`;
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "pk = :pk",
+        ExpressionAttributeValues: {
+          ":pk": pk,
+        },
+      }),
+    );
+
+    for (const item of result.Items ?? []) {
+      await this.client.send(
+        new DeleteCommand({
+          TableName: this.tableName,
+          Key: {
+            pk,
+            sk: item.sk,
+          },
+        }),
+      );
+    }
   }
 }

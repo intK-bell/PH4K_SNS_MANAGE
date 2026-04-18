@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
@@ -151,5 +152,17 @@ export class DynamoPostRepository {
     );
 
     return (result.Attributes as Post | undefined) ?? null;
+  }
+
+  async deletePost(postId: string): Promise<void> {
+    await this.client.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: {
+          pk: POST_PK,
+          sk: postId,
+        },
+      }),
+    );
   }
 }

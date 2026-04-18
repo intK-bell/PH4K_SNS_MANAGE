@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  DeleteCommand,
   PutCommand,
   QueryCommand,
   type DynamoDBDocumentClient,
@@ -46,5 +47,30 @@ export class DynamoMetricRepository {
     return ((result.Items ?? []) as MetricSnapshot[]).sort((a, b) =>
       b.fetchedAt.localeCompare(a.fetchedAt),
     );
+  }
+
+  async deleteMetricSnapshots(postId: string): Promise<void> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "pk = :pk AND begins_with(sk, :sk)",
+        ExpressionAttributeValues: {
+          ":pk": METRIC_PK,
+          ":sk": `${postId}#`,
+        },
+      }),
+    );
+
+    for (const item of result.Items ?? []) {
+      await this.client.send(
+        new DeleteCommand({
+          TableName: this.tableName,
+          Key: {
+            pk: METRIC_PK,
+            sk: item.sk,
+          },
+        }),
+      );
+    }
   }
 }

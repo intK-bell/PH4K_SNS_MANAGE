@@ -30,6 +30,7 @@ export interface AppEnv {
   openAiPromptVersion: string;
   lpLandingUrl: string;
   clickTrackingBaseUrl: string;
+  staleCandidateRetentionDays: number;
   enableXPublish: boolean;
   logLevel: string;
 }
@@ -83,6 +84,10 @@ export const loadEnv = (): AppEnv => ({
   lpLandingUrl:
     process.env.LP_LANDING_URL ?? "https://ph4k.aokigk.com/landing",
   clickTrackingBaseUrl: resolveClickTrackingBaseUrl(),
+  staleCandidateRetentionDays: Number.parseInt(
+    process.env.STALE_CANDIDATE_RETENTION_DAYS ?? "7",
+    10,
+  ),
   enableXPublish: process.env.ENABLE_X_PUBLISH !== "false",
   logLevel: process.env.LOG_LEVEL ?? "info",
 });

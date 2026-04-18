@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { GoogleSheetsClient } from "@ph4k/adapters";
-import type { AnalysisRow, IdeaBacklogRow, PostManagementRow } from "@ph4k/core";
+import type { AnalysisRow, IdeaBacklogRow, KpiRow, PostManagementRow } from "@ph4k/core";
 import { loadEnv } from "@ph4k/config";
 import {
   createLogger,
@@ -65,6 +65,67 @@ const safeAverage = (values: number[]): string => {
     return "";
   }
   return (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2);
+};
+
+const formatPercent = (value: number | null): string => {
+  if (value === null || Number.isNaN(value)) {
+    return "";
+  }
+  return `${value.toFixed(2)}%`;
+};
+
+const buildKpiRows = (
+  posts: Array<NonNullable<Awaited<ReturnType<typeof postRepository.getPost>>>>,
+  clickCountsByPostId: Map<string, number>,
+): KpiRow[] => {
+  const totalImpressions = posts.reduce(
+    (sum, post) => sum + (post.latestImpressions ?? 0),
+    0,
+  );
+  const totalClicks = posts.reduce(
+    (sum, post) => sum + (clickCountsByPostId.get(post.postId) ?? 0),
+    0,
+  );
+  const impressionTarget = 500_000;
+  const clickRateTarget = 5;
+  const actualClickRate =
+    totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+  const updatedAt = formatDateTimeJst(new Date().toISOString());
+
+  return [
+    {
+      kpiName: "累計インプレッション",
+      targetValue: impressionTarget.toLocaleString("ja-JP"),
+      actualValue: totalImpressions.toLocaleString("ja-JP"),
+      progressRate: formatPercent((totalImpressions / impressionTarget) * 100),
+      status: totalImpressions >= impressionTarget ? "達成" : "進行中",
+      note: "目標: 合計50万imp",
+      updatedAt,
+    },
+    {
+      kpiName: "X→LPクリック率",
+      targetValue: `${clickRateTarget.toFixed(2)}%`,
+      actualValue: formatPercent(actualClickRate),
+      progressRate: formatPercent((actualClickRate / clickRateTarget) * 100),
+      status: actualClickRate >= clickRateTarget ? "達成" : "進行中",
+      note: `累計クリック ${totalClicks.toLocaleString("ja-JP")} / 累計imp ${totalImpressions.toLocaleString("ja-JP")}`,
+      updatedAt,
+    },
+    {
+      kpiName: "累計LPクリック",
+      targetValue: Math.round(impressionTarget * (clickRateTarget / 100)).toLocaleString("ja-JP"),
+      actualValue: totalClicks.toLocaleString("ja-JP"),
+      progressRate: formatPercent(
+        (totalClicks / Math.round(impressionTarget * (clickRateTarget / 100))) * 100,
+      ),
+      status:
+        totalClicks >= Math.round(impressionTarget * (clickRateTarget / 100))
+          ? "達成"
+          : "進行中",
+      note: "クリック数は自前 redirect tracking を正本とする",
+      updatedAt,
+    },
+  ];
 };
 
 const buildRow = (
@@ -234,35 +295,9 @@ export const handler = async (event: unknown) => {
     throw new Error("post not found");
   }
 
-  const candidate = await candidateRepository.getCandidate(post.candidateId);
-  if (!candidate) {
-    throw new Error("candidate not found");
-  }
-
-  const idea = await ideaRepository.getIdea(post.ideaId);
-  if (!idea) {
-    throw new Error("idea not found");
-  }
-
-  const currentClickCount = await clickTrackingRepository.countClicks(post.postId);
-  const row = buildRow(post, candidate, idea, currentClickCount);
   const attemptedAt = new Date();
 
   try {
-    const result = await retry(() => sheetsClient.upsertPostManagementRow(row), {
-      attempts: 3,
-      initialDelayMs: 1000,
-      onRetry: async (attempt, error, nextDelayMs) => {
-        logger.warn("spreadsheet sync retry scheduled", {
-          stage: "post_management",
-          attempt,
-          nextDelayMs,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          postId: post.postId,
-        });
-      },
-    });
-
     const allPosts = await postRepository.listPosts();
     const candidateIds = [...new Set(allPosts.map((item) => item.candidateId))];
     const ideaIds = [...new Set(allPosts.map((item) => item.ideaId))];
@@ -291,7 +326,38 @@ export const handler = async (event: unknown) => {
         .map((item) => [item.ideaId, item]),
     );
 
-    const analysisRows = buildAnalysisRows(allPosts, candidatesById, ideasById, clickCountsByPostId);
+    const validPosts = allPosts.filter(
+      (item) => candidatesById.has(item.candidateId) && ideasById.has(item.ideaId),
+    );
+
+    const postManagementRows = validPosts
+      .map((item) =>
+        buildRow(
+          item,
+          candidatesById.get(item.candidateId)!,
+          ideasById.get(item.ideaId)!,
+          clickCountsByPostId.get(item.postId) ?? 0,
+        ),
+      );
+    const currentRow = postManagementRows.find((item) => item.id === post.postId) ?? null;
+    const postManagementResult = await retry(
+      () => sheetsClient.replacePostManagementRows(postManagementRows),
+      {
+        attempts: 3,
+        initialDelayMs: 1000,
+        onRetry: async (attempt, error, nextDelayMs) => {
+          logger.warn("spreadsheet sync retry scheduled", {
+            stage: "post_management_replace",
+            attempt,
+            nextDelayMs,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            postId: post.postId,
+          });
+        },
+      },
+    );
+
+    const analysisRows = buildAnalysisRows(validPosts, candidatesById, ideasById, clickCountsByPostId);
     const analysisResult = await retry(() => sheetsClient.replaceAnalysisRows(analysisRows), {
       attempts: 3,
       initialDelayMs: 1000,
@@ -322,6 +388,20 @@ export const handler = async (event: unknown) => {
         },
       },
     );
+    const kpiRows = buildKpiRows(validPosts, clickCountsByPostId);
+    const kpiResult = await retry(() => sheetsClient.replaceKpiRows(kpiRows), {
+      attempts: 3,
+      initialDelayMs: 1000,
+      onRetry: async (attempt, error, nextDelayMs) => {
+        logger.warn("spreadsheet sync retry scheduled", {
+          stage: "kpi",
+          attempt,
+          nextDelayMs,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          postId: post.postId,
+        });
+      },
+    });
 
     const syncedPost = await postRepository.updateSpreadsheetSync(post.postId, {
       spreadsheetSyncStatus: "synced",
@@ -333,8 +413,10 @@ export const handler = async (event: unknown) => {
 
     logger.info("spreadsheet sync completed", {
       postId: post.postId,
-      postManagementMode: result.mode,
+      postManagementMode: currentRow ? "updated" : "skipped",
+      postManagementRowCount: postManagementResult.rowCount,
       analysisRowCount: analysisResult.rowCount,
+      kpiRowCount: kpiResult.rowCount,
       ideaBacklogRowCount: ideaBacklogResult.rowCount,
       spreadsheetSyncAttempts: syncedPost?.spreadsheetSyncAttempts ?? null,
       durationMs: Date.now() - startedAt,
@@ -344,12 +426,17 @@ export const handler = async (event: unknown) => {
       correlationId,
       configured: sheetsClient.isConfigured(),
       postManagement: {
-        mode: result.mode,
-        row,
+        mode: currentRow ? "updated" : "skipped",
+        row: currentRow,
+        rowCount: postManagementResult.rowCount,
       },
       analysis: {
         rowCount: analysisResult.rowCount,
         rows: analysisRows,
+      },
+      kpi: {
+        rowCount: kpiResult.rowCount,
+        rows: kpiRows,
       },
       ideaBacklog: {
         rowCount: ideaBacklogResult.rowCount,

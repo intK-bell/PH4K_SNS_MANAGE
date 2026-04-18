@@ -286,3 +286,25 @@
 - X 標準の `url_link_clicks` 取得は権限制約と運用複雑化のわりに不安定やったため、X metrics 側の拡張は撤回し、再び `public_metrics` のみを取得する実装へ戻した
 - `MetricSnapshot / Post / fetchPostMetrics / postRepository` から X 由来の `urlLinkClicks / latestUrlLinkClicks` 追加分を取り除き、自前 click tracking と責務を分離した
 - これにより、X metrics は `impressions / likes / replies / reposts / bookmarks / quoteCount` のみ、クリック数は `clicks` table 正本という構成に整理した
+- 24h scheduler は正常に発火し `fetchPostMetrics` も成功していた一方で、`syncToSpreadsheet` が自動では呼ばれておらず、スプレッドシート反映が止まっていることを確認した
+- 方針として `metric-sync Step Functions` へ寄せる案もあったが、まずは最短で直すため `fetchPostMetrics` 成功後に `syncToSpreadsheet` を直接 invoke する構成を採用した
+- `FetchPostMetricsHandler` に `SYNC_TO_SPREADSHEET_LAMBDA_ARN` と `lambda:InvokeFunction` 権限を追加し、metrics 成功後に spreadsheet sync を即時起動するように変更した
+- KPI 要件として `合計インプレッション 50万` と `X→LPクリック率 5%` をシート上で常時見える化する方針を追加した
+- `syncToSpreadsheet` を拡張し、`投稿管理 / 分析 / ネタ帳` に加えて `KPI` シートも毎回再計算・再配置するようにした
+- `KPI` シートには `累計インプレッション / X→LPクリック率 / 累計LPクリック` の 3 行を出し、目標値・実績値・進捗率・判定・更新日時を表示するようにした
+- `投稿管理` はこれまでの単票 upsert に加えて全行再構築を実装し、正本から消した投稿がシートに残らない構成へ変更した
+- `Ph4kSnsApplicationStack` を再デプロイして KPI シート追加と投稿管理全置換のロジックを本番反映した
+- DynamoDB `posts-dev` から `4e4f0c87-133c-42c5-b893-1c1ea841eea5` `bc5f04ac-2bb6-48d0-a63f-cc50ef263617` `58eef23e-fe6f-49e8-b387-02e575e6ee22` を削除し、古い投稿が分析や投稿管理へ戻らないようにした
+- 上記の削除後に `SyncToSpreadsheetHandler` を手動実行し、`投稿管理` 2行、`分析` 2行、`KPI` 3行、`ネタ帳` 2行で再同期されることを確認した
+- 追加依頼に合わせて `posts-dev` から `62a4095c-4662-4d97-860f-710e0d3b1cec` を削除し、`ideas-dev` から `672721cb-536a-420f-9857-f23da714ad4a` と `0167c2df-4436-4693-be18-acede011214b` を削除した
+- その結果、残存 post が削除済み idea を参照して `SyncToSpreadsheetHandler` が `idea not found` で落ちることを確認した
+- `syncToSpreadsheet` を修正し、candidate または idea が残っていない orphan post は `投稿管理 / 分析 / KPI` の集計対象から自動除外するようにした
+- orphan スキップ修正を `Ph4kSnsApplicationStack` へ再デプロイし、再同期後に `投稿管理` 0行、`分析` 1行(totalのみ)、`KPI` 3行、`ネタ帳` 0行となることを確認した
+- 簡略版ネタ帳の正本として `idea-001`〜`idea-004` を `ideas-dev` へ投入した
+- 登録したネタ帳は `写真整理 / 報告書 / 現場監査 / 帰社後作業` の4件で、列は `ideaId / title / problem / detail` ベースの最小構成にした
+- 残存投稿 `d6c85950-e1bf-4fe5-9148-2bff94af8f97` と candidate `f13ec1ba-ec51-456d-a4af-dce940ba89a5` の `ideaId` を `idea-001` に付け替え、現在の投稿は `写真整理` ネタに属する形へ整理した
+- 再同期の結果、`投稿管理` 1行、`分析` 2行、`KPI` 3行、`ネタ帳` 4行となり、投稿管理と分析の `latestIdeaTitle` も `写真整理` で表示されることを確認した
+- 未使用候補は恒久保存せず、`selected=false && status!=posted && 7日超過` を日次削除する保持ポリシーで固めた
+- `PurgeStaleCandidatesHandler` を追加し、`candidates` テーブルから 7日超過の未使用候補を削除する worker を実装した
+- `STALE_CANDIDATE_RETENTION_DAYS` 環境変数を追加し、既定値を 7日にした
+- `Ph4kSnsApplicationStack` に日次 `03:00 JST` 実行の EventBridge Rule を追加し、未使用候補クリーンアップを自動実行する構成にした

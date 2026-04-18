@@ -5,6 +5,8 @@ import type { Table } from "aws-cdk-lib/aws-dynamodb";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction, OutputFormat } from "aws-cdk-lib/aws-lambda-nodejs";
 import { LambdaRestApi } from "aws-cdk-lib/aws-apigateway";
+import { Rule, Schedule } from "aws-cdk-lib/aws-events";
+import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
 import {
   Effect,
   PolicyStatement,
@@ -162,6 +164,10 @@ export class ApplicationStack extends Stack {
         GOOGLE_SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_ID ?? "",
       },
     });
+    fetchPostMetricsHandler.addEnvironment(
+      "SYNC_TO_SPREADSHEET_LAMBDA_ARN",
+      syncToSpreadsheetHandler.functionArn,
+    );
 
     const schedulerExecutionRole = new Role(this, "SchedulerExecutionRole", {
       assumedBy: new ServicePrincipal("scheduler.amazonaws.com"),
@@ -189,6 +195,18 @@ export class ApplicationStack extends Stack {
       },
     });
 
+    const purgeStaleCandidatesHandler = new NodejsFunction(this, "PurgeStaleCandidatesHandler", {
+      runtime: Runtime.NODEJS_22_X,
+      entry: join(projectRoot, "apps", "workers", "src", "handlers", "purgeStaleCandidates.ts"),
+      handler: "handler",
+      timeout: Duration.seconds(30),
+      bundling: commonNodejsBundling,
+      environment: {
+        CANDIDATES_TABLE_NAME: props.candidatesTable.tableName,
+        STALE_CANDIDATE_RETENTION_DAYS: process.env.STALE_CANDIDATE_RETENTION_DAYS ?? "7",
+      },
+    });
+
     props.ideasTable.grantReadWriteData(apiHandler);
     props.candidatesTable.grantReadWriteData(apiHandler);
     props.postsTable.grantReadWriteData(apiHandler);
@@ -201,12 +219,20 @@ export class ApplicationStack extends Stack {
     props.clicksTable.grantReadWriteData(publishSelectedPostHandler);
     props.postsTable.grantReadWriteData(fetchPostMetricsHandler);
     props.metricsTable.grantReadWriteData(fetchPostMetricsHandler);
+    fetchPostMetricsHandler.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["lambda:InvokeFunction"],
+        resources: [syncToSpreadsheetHandler.functionArn],
+      }),
+    );
     props.postsTable.grantReadWriteData(syncToSpreadsheetHandler);
     props.metricsTable.grantReadWriteData(syncToSpreadsheetHandler);
     props.candidatesTable.grantReadData(syncToSpreadsheetHandler);
     props.ideasTable.grantReadData(syncToSpreadsheetHandler);
     props.clicksTable.grantReadData(syncToSpreadsheetHandler);
     props.postsTable.grantReadWriteData(createMetricFetchScheduleHandler);
+    props.candidatesTable.grantReadWriteData(purgeStaleCandidatesHandler);
     createMetricFetchScheduleHandler.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -234,6 +260,15 @@ export class ApplicationStack extends Stack {
     const api = new LambdaRestApi(this, "IdeasApi", {
       handler: apiHandler,
       proxy: true,
+    });
+
+    new Rule(this, "DailyStaleCandidateCleanupRule", {
+      schedule: Schedule.cron({
+        minute: "0",
+        hour: "18",
+      }),
+      targets: [new LambdaFunction(purgeStaleCandidatesHandler)],
+      description: "Delete unused candidates older than 7 days at 03:00 JST daily",
     });
 
     const stateMachineRole = new Role(this, "StateMachineRole", {

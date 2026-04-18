@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import type { AnalysisRow, IdeaBacklogRow, PostManagementRow } from "@ph4k/core";
+import type { AnalysisRow, IdeaBacklogRow, KpiRow, PostManagementRow } from "@ph4k/core";
 
 const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -51,6 +51,16 @@ const ANALYSIS_HEADERS = [
   "最新投稿日",
   "最新ネタ",
   "最新投稿ID",
+];
+
+const KPI_HEADERS = [
+  "KPI",
+  "目標値",
+  "実績値",
+  "進捗率",
+  "判定",
+  "メモ",
+  "更新日時",
 ];
 
 const IDEA_BACKLOG_HEADERS = [
@@ -111,6 +121,16 @@ const ideaBacklogRowToValues = (row: IdeaBacklogRow): string[] => [
   row.status,
   row.useCount,
   row.createdAt,
+  row.updatedAt,
+];
+
+const kpiRowToValues = (row: KpiRow): string[] => [
+  row.kpiName,
+  row.targetValue,
+  row.actualValue,
+  row.progressRate,
+  row.status,
+  row.note,
   row.updatedAt,
 ];
 
@@ -304,6 +324,27 @@ const buildAnalysisTotalRowStyleRequest = (
   },
 });
 
+const buildKpiStatusHighlightRequest = (
+  sheetId: number,
+): Record<string, unknown> => ({
+  repeatCell: {
+    range: {
+      sheetId,
+      startRowIndex: 1,
+      startColumnIndex: 4,
+      endColumnIndex: 5,
+    },
+    cell: {
+      userEnteredFormat: {
+        textFormat: {
+          bold: true,
+        },
+      },
+    },
+    fields: "userEnteredFormat.textFormat.bold",
+  },
+});
+
 const buildBasicFilterRequest = (
   sheetId: number,
   endColumnIndex: number,
@@ -453,6 +494,7 @@ export class GoogleSheetsClient {
     const sheetProperties = await this.listSheetProperties();
     const hasPostManagement = sheetProperties.has("投稿管理");
     const hasAnalysis = sheetProperties.has("分析");
+    const hasKpi = sheetProperties.has("KPI");
     const hasIdeaBacklog = sheetProperties.has("ネタ帳");
 
     const requests: Array<Record<string, unknown>> = [];
@@ -472,6 +514,16 @@ export class GoogleSheetsClient {
         addSheet: {
           properties: {
             title: "分析",
+          },
+        },
+      });
+    }
+
+    if (!hasKpi) {
+      requests.push({
+        addSheet: {
+          properties: {
+            title: "KPI",
           },
         },
       });
@@ -504,6 +556,12 @@ export class GoogleSheetsClient {
       range: "分析!A1:L1",
       majorDimension: "ROWS",
       values: [ANALYSIS_HEADERS],
+    });
+
+    await this.request("PUT", "values/KPI!A1:G1?valueInputOption=RAW", {
+      range: "KPI!A1:G1",
+      majorDimension: "ROWS",
+      values: [KPI_HEADERS],
     });
 
     await this.request("PUT", "values/%E3%83%8D%E3%82%BF%E5%B8%B3!A1:J1?valueInputOption=RAW", {
@@ -582,6 +640,22 @@ export class GoogleSheetsClient {
     });
   }
 
+  private async applyKpiSheetFormatting(sheetId: number): Promise<void> {
+    await this.request("POST", ":batchUpdate", {
+      requests: [
+        buildFrozenHeaderRequest(sheetId),
+        buildHeaderStyleRequest(sheetId, KPI_HEADERS.length),
+        ...buildColumnWidthRequests(sheetId, [220, 140, 140, 120, 110, 260, 170]),
+        ...buildBodyAlignmentRequest(sheetId, KPI_HEADERS.length, {
+          centerColumns: [1, 2, 3, 4, 6],
+          wrapColumns: [0, 5],
+        }),
+        buildBasicFilterRequest(sheetId, KPI_HEADERS.length),
+        buildKpiStatusHighlightRequest(sheetId),
+      ],
+    });
+  }
+
   private async findRowIndexById(postId: string): Promise<number | null> {
     const response = await this.request<{ values?: string[][] }>(
       "GET",
@@ -639,6 +713,40 @@ export class GoogleSheetsClient {
     }
 
     return { mode: "inserted" };
+  }
+
+  async replacePostManagementRows(
+    rows: PostManagementRow[],
+  ): Promise<{ rowCount: number }> {
+    if (!this.isConfigured()) {
+      return { rowCount: rows.length };
+    }
+
+    const sheetProperties = await this.ensureSheets();
+    await this.request(
+      "POST",
+      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A2:Q:clear",
+      {},
+    );
+
+    const values = rows.map((row) => rowToValues(row));
+    const range = `投稿管理!A2:Q${Math.max(rows.length + 1, 2)}`;
+    await this.request(
+      "PUT",
+      `values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        range,
+        majorDimension: "ROWS",
+        values,
+      },
+    );
+
+    const postManagementSheetId = sheetProperties.get("投稿管理")?.sheetId;
+    if (postManagementSheetId !== undefined) {
+      await this.applyPostManagementSheetFormatting(postManagementSheetId);
+    }
+
+    return { rowCount: rows.length };
   }
 
   async replaceAnalysisRows(rows: AnalysisRow[]): Promise<{ rowCount: number }> {
@@ -704,6 +812,38 @@ export class GoogleSheetsClient {
     const ideaBacklogSheetId = sheetProperties.get("ネタ帳")?.sheetId;
     if (ideaBacklogSheetId !== undefined) {
       await this.applyIdeaBacklogSheetFormatting(ideaBacklogSheetId);
+    }
+
+    return { rowCount: rows.length };
+  }
+
+  async replaceKpiRows(rows: KpiRow[]): Promise<{ rowCount: number }> {
+    if (!this.isConfigured()) {
+      return { rowCount: rows.length };
+    }
+
+    const sheetProperties = await this.ensureSheets();
+    await this.request(
+      "POST",
+      "values/KPI!A2:G:clear",
+      {},
+    );
+
+    const values = rows.map((row) => kpiRowToValues(row));
+    const range = `KPI!A2:G${Math.max(rows.length + 1, 2)}`;
+    await this.request(
+      "PUT",
+      `values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        range,
+        majorDimension: "ROWS",
+        values,
+      },
+    );
+
+    const kpiSheetId = sheetProperties.get("KPI")?.sheetId;
+    if (kpiSheetId !== undefined) {
+      await this.applyKpiSheetFormatting(kpiSheetId);
     }
 
     return { rowCount: rows.length };

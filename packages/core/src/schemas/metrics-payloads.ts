@@ -42,6 +42,16 @@ export interface AnalysisRow {
   latestPostId: string;
 }
 
+export interface KpiRow {
+  kpiName: string;
+  targetValue: string;
+  actualValue: string;
+  progressRate: string;
+  status: string;
+  note: string;
+  updatedAt: string;
+}
+
 export interface IdeaBacklogRow {
   ideaId: string;
   title: string;

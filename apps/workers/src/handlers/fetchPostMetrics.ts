@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { XMetricsClient } from "@ph4k/adapters";
 import { loadEnv } from "@ph4k/config";
 import {
+  createWorkerInvoker,
   createLogger,
   createDynamoDocumentClient,
   DynamoMetricRepository,
@@ -13,6 +14,11 @@ const env = loadEnv();
 const client = createDynamoDocumentClient(env.awsRegion);
 const postRepository = new DynamoPostRepository(client, env.postsTableName);
 const metricRepository = new DynamoMetricRepository(client, env.metricsTableName);
+const workerInvoker = createWorkerInvoker(
+  env.awsRegion,
+  "",
+  env.syncToSpreadsheetLambdaArn,
+);
 const xMetricsClient = new XMetricsClient({
   bearerToken: env.xBearerToken,
   accessToken: env.xAccessToken,
@@ -71,10 +77,19 @@ export const handler = async (event: unknown) => {
       durationMs: Date.now() - startedAt,
     });
 
+    const syncResult = await workerInvoker.retrySpreadsheetSync(post.postId);
+    logger.info("spreadsheet sync invoked after metrics fetch", {
+      postId: post.postId,
+      syncMode: syncResult.mode,
+      syncStatusCode: "statusCode" in syncResult ? syncResult.statusCode : null,
+      durationMs: Date.now() - startedAt,
+    });
+
     return {
       correlationId,
       post: updatedPost,
       metricSnapshot: snapshot,
+      spreadsheetSync: syncResult,
     };
   } catch (error) {
     logger.error("metrics fetch failed", error, {
