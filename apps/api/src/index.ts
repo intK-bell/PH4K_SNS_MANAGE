@@ -14,6 +14,30 @@ import { retrySheetSync } from "./handlers/posts/retry-sheet-sync.js";
 import { handleLineWebhook } from "./handlers/webhooks/handle-line-webhook.js";
 import { HttpError, json } from "./lib/http.js";
 
+const normalizeRoutePath = (path: string): string => {
+  const trimmed = path.trim();
+  if (trimmed === "") {
+    return "/";
+  }
+
+  const withoutQuery = trimmed.split("?")[0] ?? trimmed;
+  const normalized = withoutQuery.replace(/\/+$/, "") || "/";
+  const appBaseUrl = process.env.APP_BASE_URL ?? "";
+
+  if (appBaseUrl !== "") {
+    try {
+      const prefix = new URL(appBaseUrl).pathname.replace(/\/+$/, "");
+      if (prefix !== "" && normalized.startsWith(`${prefix}/`)) {
+        return normalized.slice(prefix.length) || "/";
+      }
+    } catch {
+      // ignore malformed env and fall through to raw path
+    }
+  }
+
+  return normalized;
+};
+
 const routes = [
   {
     method: "GET",
@@ -84,15 +108,19 @@ const routes = [
 
 export const handler = async (event: ApiGatewayEvent): Promise<ApiResponse> => {
   try {
+    const normalizedPath = normalizeRoutePath(event.path);
     const route = routes.find(
-      (entry) => entry.method === event.httpMethod && entry.pattern.test(event.path),
+      (entry) => entry.method === event.httpMethod && entry.pattern.test(normalizedPath),
     );
 
     if (!route) {
       return json(404, { message: "route not found" });
     }
 
-    return await route.handler(event);
+    return await route.handler({
+      ...event,
+      path: normalizedPath,
+    });
   } catch (error) {
     if (error instanceof HttpError) {
       return json(error.statusCode, { message: error.message });

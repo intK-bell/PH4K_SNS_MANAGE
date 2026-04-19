@@ -7,6 +7,7 @@ export interface UpdateCandidateInput {
   body?: string;
   selected?: boolean;
   status?: CandidateStatus;
+  trackingShortId?: string | null;
   lineDeliveryStatus?: "not_sent" | "sent" | "failed";
   lineDeliveryAttempts?: number;
   lineLastAttemptAt?: string | null;

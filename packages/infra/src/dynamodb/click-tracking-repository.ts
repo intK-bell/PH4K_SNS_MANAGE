@@ -64,6 +64,15 @@ export class DynamoClickTrackingRepository {
     return ((result.Items ?? [])[0] as ClickTrackingLink | undefined) ?? null;
   }
 
+  async deleteTrackingByShortId(shortId: string): Promise<void> {
+    const link = await this.getLinkByShortId(shortId);
+    if (!link) {
+      return;
+    }
+
+    await this.deleteTrackingByPostId(link.postId);
+  }
+
   async createClickEvent(input: ClickEvent): Promise<ClickEvent> {
     await this.client.send(
       new PutCommand({

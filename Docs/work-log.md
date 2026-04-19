@@ -308,3 +308,46 @@
 - `PurgeStaleCandidatesHandler` を追加し、`candidates` テーブルから 7日超過の未使用候補を削除する worker を実装した
 - `STALE_CANDIDATE_RETENTION_DAYS` 環境変数を追加し、既定値を 7日にした
 - `Ph4kSnsApplicationStack` に日次 `03:00 JST` 実行の EventBridge Rule を追加し、未使用候補クリーンアップを自動実行する構成にした
+- 2026-04-19 09:39 JST の LINE 起点投稿について追加調査し、`candidate-delivery` は成功、`post-publish` 実行 `post-publish-b7370b32-ab28-49d5-b2a4-d5253304e8e3-1776559197425` が `PublishSelectedPost` で `x publish failed (403): You are not permitted to perform this action.` により失敗していたことを確認した
+- 同 candidate `b7370b32-ab28-49d5-b2a4-d5253304e8e3` は `candidates-dev` で `selected=true, status=pending` のまま残り、`posts-dev` には対応 post レコードが未作成だったため、停止箇所は `publishSelectedPost -> X API` に限定できた
+- 直近コード差分を確認したところ、X 認証ヘッダ生成と `POST https://api.x.com/2/tweets` 呼び出しを担う `packages/adapters/src/x/client.ts` は初期実装以降変更されておらず、最近の X 投稿経路への差分は `publishSelectedPost` に追加した click tracking URL 生成・差し替え (`433b7be`) が主だった
+- ただし今回の失敗は Lambda 側の env 欠落や `ENABLE_X_PUBLISH=false` ではなく、実際に `post-publish` まで起動した上で X 側から 403 を返された形やったため、「直近変更が原因」とまでは断定せず、現時点では `X 権限/判定系の拒否が継続しており、click tracking 追加は要注意だが未確定` と整理した
+- click tracking の追加調査では、失敗 candidate 用に `clicks-dev` へ `shortId=nW4dOAEp` の link record が作成されており、publish 前の短縮URL生成自体は実行されていたことを確認した
+- 一方で本番 Lambda 環境変数 `CLICK_TRACKING_BASE_URL` は API / worker ともに空で、実装上は fallback により `APP_BASE_URL=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod` ベースの `/r/{shortId}` を投稿本文へ差し込む設計になっていた
+- 過去の成功投稿 `externalPostId=2045085753131344072` を X API で再確認したところ、tweet 本文の URL entity は `https://ph4k.aokigk.com/landing` へ展開されており、成功実績があるのは click tracking 導入前の LP 直リンク経路だった
+- 以上から、click tracking 導入後の投稿は `execute-api` ドメイン経由 redirect URL を含む想定になっており、この URL 差し替えが X 側 403 の有力候補に浮上した。現時点では `認証設定変更より、投稿本文内URLの変更影響が濃い` という調査結論に更新した
+- さらに切り分けたところ、LINE 候補一覧と確認カードは `candidate.body` をそのまま表示しており、`r/{shortId}` 付きURLは `publishSelectedPost` 内の `buildPostText(...)` で publish 直前にだけ差し込む構造だった
+- このため、2026-04-19 09:39 JST に LINE 上で `r/{shortId}` が見えなかったのは保存/生成漏れではなく、`LINE表示用本文とX投稿用本文が分離している実装差` によるものと判明した
+- 修正方針の検討観点として、`LINEにも最終投稿文面(短縮URL込み)を見せる` ことと、`Xへは execute-api 直URLではなく独自ドメイン経由の click URL を載せる` ことを次の論点として整理した
+- 推奨修正方針として、`CLICK_TRACKING_BASE_URL` 未設定時の fallback を `APP_BASE_URL` ではなく `LP_LANDING_URL` の origin へ変更し、投稿URLの既定値を `https://ph4k.aokigk.com/r/{shortId}` 形へ寄せる方針に決めた
+- あわせて `LINE確認文面` と `X投稿文面` を同じ builder で組み立て、既存の LP 直リンクを tracking URL へ置き換えることで、本文内に `landing` と `r/{shortId}` が二重に共存しないよう直す方針に決めた
+- `r/{shortId}` を LINE 確認時点でも見せられるよう、shortId は候補選択時に予約して candidate に保持し、実投稿時に同じ shortId を再利用する方針に決めた
+- 上記方針に沿って、tracking URL / 最終投稿文面 builder を共通化し、`CLICK_TRACKING_BASE_URL` 未設定時は `LP_LANDING_URL` の origin を使って `https://ph4k.aokigk.com/r/{shortId}` を既定生成するよう実装した
+- 候補選択時に shortId を予約して candidate へ保持し、LINE の確認カードでも X に実際送る最終文面 (`r/{shortId}` 含む) を表示するよう実装した
+- 実投稿時は candidate に保持した shortId を再利用し、本文中の既存 URL を除去したうえで tracking URL を 1 本だけ付与するよう実装した
+- `pnpm -r build` で全 workspace の build 成功を確認した
+- `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を実行し、`Ph4kSnsApplicationStack` の本番デプロイが成功した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- デプロイ後の現物確認で、LINE 候補一覧だけでなく確認カードでも `landing` が見えていたため再調査したところ、`IdeasApiHandler` の Lambda 環境変数に `APP_BASE_URL / LP_LANDING_URL / CLICK_TRACKING_BASE_URL` を注入しておらず、API 側 preview だけ `clickTrackingBaseUrl=""` になっていたことを確認した
+- これに対して `Ph4kSnsApplicationStack` の `IdeasApiHandler` environment へ上記 3 変数を追加し、確認カード側も worker 側と同じ tracking URL 解決ロジックを使えるよう修正した
+- `pnpm -r build` を再実行して build 成功を確認後、`npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を再実行し、API Lambda env 欠落修正の本番デプロイが成功した
+- 追加調査で、`/r/{shortId}` の API redirect は Lambda 直接 invoke では `302 -> https://ph4k.aokigk.com/landing` が返る一方、公開ドメイン `https://ph4k.aokigk.com/r/{shortId}` は LP 静的サイト (S3/CloudFront) 側を見ており API redirect endpoint には届いていないことを確認した
+- そのため、`ph4k.aokigk.com/r/{shortId}` を本文へ載せても実体は click tracking として機能しておらず、X 投稿失敗の有力因子として `壊れた tracking URL` が残っていると整理した
+- 暫定対処として、`CLICK_TRACKING_BASE_URL` 未設定時の fallback 優先順を `APP_BASE_URL -> LP_LANDING_URL origin` へ戻し、独自ドメインの `/r/*` ルーティングが整うまでは `execute-api` ドメイン配下の tracking URL を使う方針に切り替えた
+- 上記 fallback 変更を `pnpm -r build` 後に `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` で本番反映した
+- 運用方針としては `execute-api` 直URLではなく `https://ph4k.aokigk.com/r/{shortId}` を正本に戻す方針で合意した
+- 次アクションとして、`ph4k.aokigk.com` 側の `/r/*` を LP 静的サイトではなく API Gateway `GET /r/{shortId}` へ流すルーティングを整備し、疎通確認後に tracking URL を独自ドメインへ戻す作業に着手する
+- 追加で Route53 / CloudFront 現物を確認したところ、`ph4k.aokigk.com` は `d3h4rgbpnthub5.cloudfront.net` へ CNAME されていたが、この CloudFront distribution は現アカウント一覧には現れず、少なくとも本リポジトリの CDK 管理下には無いことを確認した
+- そのため、`ph4k.aokigk.com/r/*` を API へ流すには、外部管理の `d3h4rgbpnthub5.cloudfront.net` 側で behavior/origin を追加するか、ドメイン配信構成そのものを移管する必要があると判明した
+- 一方で `api.ph4k.aokigk.com` はこのアカウントの API Gateway custom domain として存在したが、別 API (`restApiId=0nhz8sat7j`, stage=`$default`) に mapping されており、本システムの `IdeasApi (2prx2kvdel)` には未接続だった
+- 以上より、現アカウントと本リポジトリの変更だけでは `ph4k.aokigk.com/r/{shortId}` の復旧までは完結できず、外部の CloudFront 管理変更またはドメイン配信再設計が別途必要、という blocker を確定した
+- 追加調査で、`ph4k.aokigk.com` は外部管理ではなく同一アカウントの Amplify app `kansa (appId=d3vej31wy18srw)` に接続された custom domain であることを確認した
+- AWS Amplify Hosting の公式仕様では customRules の `200` rewrite で reverse proxy が可能なため、`/r/<*> -> https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/r/<*>` の custom rule を Amplify app に追加した
+- 反映確認として `aws amplify get-app` で customRules に `/r/<*>` rewrite が入ったことを確認し、`curl https://ph4k.aokigk.com/r/rTyaMZYO` で `302 -> https://ph4k.aokigk.com/landing` が返ることを確認した
+- あわせて `.env` / `.env.example` の `CLICK_TRACKING_BASE_URL` を `https://ph4k.aokigk.com` に設定し、`npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を再実行して API / worker Lambda の環境変数へ branded tracking base URL を本番反映した
+- デプロイ後に `PublishSelectedPostHandler` と `IdeasApiHandler` の `CLICK_TRACKING_BASE_URL=https://ph4k.aokigk.com` を確認し、確認カード・実投稿ともに branded URL を組み立てる前提が整った
+- 運用方針を更新し、X 投稿に失敗した candidate / tracking は不要として扱うことにしたため、日次 cleanup は `posted` 以外の 7日超過 candidate を対象に広げ、`trackingShortId` があれば対応する tracking link / click event もまとめて削除する実装へ修正した
+- 設計整理として、LINE 確認カードで最終 tracking URL を見せる要件は外し、確認カードは `hook + body` の下書き確認だけに戻す方針へ変更した
+- あわせて tracking link / shortId の生成タイミングを `候補選択時` から `X 投稿成功後` へ移し、失敗投稿では tracking レコード自体を作らない実装へ切り替えた
+- 上記変更を `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` で本番反映し、`IdeasApiHandler / PublishSelectedPostHandler / PurgeStaleCandidatesHandler / SyncToSpreadsheetHandler` の更新が CloudFormation 上で完了した
+- E2E レビューでは、`PublishSelectedPost` が `X publish -> posts保存 -> tracking保存 -> candidate更新` を 1 Lambda 内で順に実行しており、この途中で失敗すると tweet だけ live のまま Step Functions 全体は失敗扱いになり、schedule 作成以降 (`metrics取得 / スプシ転記`) が走らないリスクを確認した

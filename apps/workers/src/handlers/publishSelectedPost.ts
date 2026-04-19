@@ -1,5 +1,10 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import { XPublisherClient } from "@ph4k/adapters";
+import { randomUUID } from "node:crypto";
+import {
+  buildPublishPostText,
+  buildTrackingUrl,
+  createTrackingShortId,
+  XPublisherClient,
+} from "@ph4k/adapters";
 import { loadEnv } from "@ph4k/config";
 import {
   createDynamoDocumentClient,
@@ -23,33 +28,6 @@ const publisher = new XPublisherClient({
   publicBaseUrl: env.xAppBaseUrl,
 });
 
-const createShortId = (): string => randomBytes(6).toString("base64url");
-
-const buildClickTrackingUrl = (baseUrl: string, shortId: string, lpLandingUrl: string): string => {
-  const normalizedBaseUrl = baseUrl.trim().replace(/\/$/, "");
-  if (normalizedBaseUrl !== "") {
-    return `${normalizedBaseUrl}/r/${shortId}`;
-  }
-
-  return lpLandingUrl.trim();
-};
-
-const buildPostText = (hook: string, body: string, destinationUrl: string): string => {
-  const trimmedHook = hook.trim();
-  const trimmedBody = body.trim();
-  const trimmedUrl = destinationUrl.trim();
-
-  if (trimmedUrl === "") {
-    return `${trimmedHook}\n${trimmedBody}`.trim();
-  }
-
-  const normalizedBody = trimmedBody.includes(trimmedUrl)
-    ? trimmedBody
-    : `${trimmedBody}\n\n詳細はこちら\n${trimmedUrl}`.trim();
-
-  return `${trimmedHook}\n${normalizedBody}`.trim();
-};
-
 export const handler = async (event: unknown) => {
   const input = validatePublishSelectedPostInput(event);
   const candidate = await candidateRepository.getCandidate(input.candidateId);
@@ -59,31 +37,16 @@ export const handler = async (event: unknown) => {
   }
 
   const postId = randomUUID();
-  const shortId = createShortId();
-  const trackingUrl = buildClickTrackingUrl(
+  const shortId = createTrackingShortId();
+  const trackingUrl = buildTrackingUrl(
     env.clickTrackingBaseUrl,
     shortId,
     env.lpLandingUrl,
   );
 
-  await clickTrackingRepository.createLink({
-    shortId,
-    postId,
-    candidateId: candidate.candidateId,
-    type: candidate.type,
-    mode: candidate.type === "viral" ? "harvest" : "seed",
-    landingUrl: env.lpLandingUrl.trim(),
-    createdAt: new Date().toISOString(),
-  });
-
   const published = await publisher.publish({
-    text: buildPostText(candidate.hook, candidate.body, trackingUrl),
+    text: buildPublishPostText(candidate.hook, candidate.body, trackingUrl),
     candidateId: candidate.candidateId,
-  });
-
-  const updatedCandidate = await candidateRepository.updateCandidate(candidate.candidateId, {
-    selected: true,
-    status: "posted",
   });
 
   const post = await postRepository.createPost({
@@ -105,6 +68,22 @@ export const handler = async (event: unknown) => {
     spreadsheetLastSyncedAt: null,
     spreadsheetNextRetryAt: null,
     spreadsheetSyncError: null,
+  });
+
+  await clickTrackingRepository.createLink({
+    shortId,
+    postId,
+    candidateId: candidate.candidateId,
+    type: candidate.type,
+    mode: candidate.type === "viral" ? "harvest" : "seed",
+    landingUrl: env.lpLandingUrl.trim(),
+    createdAt: new Date().toISOString(),
+  });
+
+  const updatedCandidate = await candidateRepository.updateCandidate(candidate.candidateId, {
+    selected: true,
+    status: "posted",
+    trackingShortId: shortId,
   });
 
   return {

@@ -75,6 +75,9 @@ export class ApplicationStack extends Stack {
         LINE_CHANNEL_SECRET: process.env.LINE_CHANNEL_SECRET ?? "",
         LINE_USER_ID: process.env.LINE_USER_ID ?? "",
         ENABLE_X_PUBLISH: process.env.ENABLE_X_PUBLISH ?? "true",
+        APP_BASE_URL: process.env.APP_BASE_URL ?? "",
+        LP_LANDING_URL: process.env.LP_LANDING_URL ?? "",
+        CLICK_TRACKING_BASE_URL: process.env.CLICK_TRACKING_BASE_URL ?? "",
         CANDIDATE_DELIVERY_STATE_MACHINE_ARN: "",
         POST_PUBLISH_STATE_MACHINE_ARN: "",
         PUSH_CANDIDATES_TO_LINE_LAMBDA_ARN: "",
@@ -203,6 +206,7 @@ export class ApplicationStack extends Stack {
       bundling: commonNodejsBundling,
       environment: {
         CANDIDATES_TABLE_NAME: props.candidatesTable.tableName,
+        CLICKS_TABLE_NAME: props.clicksTable.tableName,
         STALE_CANDIDATE_RETENTION_DAYS: process.env.STALE_CANDIDATE_RETENTION_DAYS ?? "7",
       },
     });
@@ -233,6 +237,7 @@ export class ApplicationStack extends Stack {
     props.clicksTable.grantReadData(syncToSpreadsheetHandler);
     props.postsTable.grantReadWriteData(createMetricFetchScheduleHandler);
     props.candidatesTable.grantReadWriteData(purgeStaleCandidatesHandler);
+    props.clicksTable.grantReadWriteData(purgeStaleCandidatesHandler);
     createMetricFetchScheduleHandler.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,

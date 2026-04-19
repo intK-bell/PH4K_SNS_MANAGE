@@ -92,6 +92,7 @@ export class DynamoCandidateRepository {
         body: draft.body,
         selected: false,
         status: "generated",
+        trackingShortId: null,
         promptVersion: draft.promptVersion,
         lineDeliveryStatus: "not_sent",
         lineDeliveryAttempts: 0,

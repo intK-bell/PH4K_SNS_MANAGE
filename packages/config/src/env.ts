@@ -37,6 +37,19 @@ export interface AppEnv {
 
 const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/$/, "");
 
+const resolveUrlOrigin = (value: string): string => {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return "";
+  }
+
+  try {
+    return normalizeBaseUrl(new URL(trimmed).origin);
+  } catch {
+    return "";
+  }
+};
+
 const resolveClickTrackingBaseUrl = (): string => {
   const explicitBaseUrl = process.env.CLICK_TRACKING_BASE_URL ?? "";
   if (explicitBaseUrl.trim() !== "") {
@@ -46,6 +59,11 @@ const resolveClickTrackingBaseUrl = (): string => {
   const appBaseUrl = process.env.APP_BASE_URL ?? "";
   if (appBaseUrl.trim() !== "") {
     return normalizeBaseUrl(appBaseUrl);
+  }
+
+  const landingUrlOrigin = resolveUrlOrigin(process.env.LP_LANDING_URL ?? "");
+  if (landingUrlOrigin !== "") {
+    return landingUrlOrigin;
   }
 
   return "";

@@ -2,7 +2,7 @@ import {
   LineMessagingClient,
   parseLineActionData,
 } from "@ph4k/adapters";
-import type { GenerateCandidatesInput, LineWebhookRequest, PostType } from "@ph4k/core";
+import type { Candidate, GenerateCandidatesInput, LineWebhookRequest, PostType } from "@ph4k/core";
 import {
   DynamoCandidateRepository,
   DynamoIdeaRepository,
@@ -45,6 +45,13 @@ export class WebhookService {
     private readonly workflowClient: WorkflowClient,
     private readonly enableXPublish: boolean,
   ) {}
+
+  private buildConfirmationText(candidate: Candidate): string {
+    return [candidate.hook.trim(), candidate.body.trim()]
+      .filter((section) => section !== "")
+      .join("\n")
+      .trim();
+  }
 
   verifySignature(body: string, signature: string | undefined) {
     if (!signature || !this.lineClient.verifySignature(body, signature)) {
@@ -187,7 +194,10 @@ export class WebhookService {
 
           if (event.replyToken) {
             await this.lineClient.replyMessages(event.replyToken, [
-              this.lineClient.buildSelectionConfirmationMessage(candidate),
+              this.lineClient.buildSelectionConfirmationMessage(
+                candidate.candidateId,
+                this.buildConfirmationText(candidate),
+              ),
             ]);
           }
 

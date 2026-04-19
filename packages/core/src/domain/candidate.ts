@@ -10,6 +10,7 @@ export interface Candidate {
   body: string;
   selected: boolean;
   status: CandidateStatus;
+  trackingShortId: string | null;
   promptVersion: string;
   lineDeliveryStatus: "not_sent" | "sent" | "failed";
   lineDeliveryAttempts: number;

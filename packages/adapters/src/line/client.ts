@@ -163,7 +163,7 @@ export class LineMessagingClient {
     await this.replyMessages(replyToken, [{ type: "text", text }]);
   }
 
-  buildSelectionConfirmationMessage(candidate: Candidate): LineMessage {
+  buildSelectionConfirmationMessage(candidateId: string, previewText: string): LineMessage {
     return {
       type: "flex",
       altText: "投稿確認",
@@ -183,14 +183,7 @@ export class LineMessagingClient {
             },
             {
               type: "text",
-              text: truncate(candidate.hook, 80),
-              size: "sm",
-              weight: "bold",
-              wrap: true,
-            },
-            {
-              type: "text",
-              text: truncate(candidate.body, 240),
+              text: truncate(previewText, 340),
               size: "sm",
               wrap: true,
             },
@@ -209,7 +202,7 @@ export class LineMessagingClient {
                 label: "はい",
                 data: encodeActionData({
                   action: "confirm_post",
-                  candidateId: candidate.candidateId,
+                  candidateId,
                 }),
                 displayText: "はい",
               },
@@ -222,7 +215,7 @@ export class LineMessagingClient {
                 label: "いいえ",
                 data: encodeActionData({
                   action: "cancel_post",
-                  candidateId: candidate.candidateId,
+                  candidateId,
                 }),
                 displayText: "いいえ",
               },

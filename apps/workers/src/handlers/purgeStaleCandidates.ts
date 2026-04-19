@@ -4,11 +4,13 @@ import {
   createDynamoDocumentClient,
   createLogger,
   DynamoCandidateRepository,
+  DynamoClickTrackingRepository,
 } from "@ph4k/infra";
 
 const env = loadEnv();
 const client = createDynamoDocumentClient(env.awsRegion);
 const candidateRepository = new DynamoCandidateRepository(client, env.candidatesTableName);
+const clickTrackingRepository = new DynamoClickTrackingRepository(client, env.clicksTableName);
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -16,9 +18,6 @@ const isPurgeTarget = (
   candidate: Awaited<ReturnType<typeof candidateRepository.listCandidates>>[number],
   cutoffTime: number,
 ): boolean => {
-  if (candidate.selected) {
-    return false;
-  }
   if (candidate.status === "posted") {
     return false;
   }
@@ -55,6 +54,9 @@ export const handler = async () => {
   const targets = candidates.filter((candidate) => isPurgeTarget(candidate, cutoffTime));
 
   for (const candidate of targets) {
+    if (candidate.trackingShortId) {
+      await clickTrackingRepository.deleteTrackingByShortId(candidate.trackingShortId);
+    }
     await candidateRepository.deleteCandidate(candidate.candidateId);
   }
 
