@@ -12,6 +12,7 @@ import { HttpError } from "../lib/http.js";
 
 const SALES_TRIGGER_TEXT = "種まきだ！";
 const VIRAL_TRIGGER_TEXT = "収穫だ！";
+const CURRENT_AFFAIRS_TRIGGER_TEXT = "時事ネタ";
 const DEFAULT_TRIGGER_COUNT = 5;
 const INTERNAL_IDEA_KEYWORDS = [
   "e2e",
@@ -135,14 +136,23 @@ export class WebhookService {
     for (const event of payload.events) {
       if (event.type === "message" && event.message?.type === "text") {
         const text = event.message.text?.trim();
-        if (text !== SALES_TRIGGER_TEXT && text !== VIRAL_TRIGGER_TEXT) {
+        if (
+          text !== SALES_TRIGGER_TEXT &&
+          text !== VIRAL_TRIGGER_TEXT &&
+          text !== CURRENT_AFFAIRS_TRIGGER_TEXT
+        ) {
           continue;
         }
 
         const ideaId = await this.resolveLatestActiveIdeaId();
         const input: GenerateCandidatesInput = {
           ideaId,
-          type: text === VIRAL_TRIGGER_TEXT ? "viral" : this.resolveTodaySalesType(),
+          type:
+            text === VIRAL_TRIGGER_TEXT
+              ? "viral"
+              : text === CURRENT_AFFAIRS_TRIGGER_TEXT
+                ? "current_affairs"
+                : this.resolveTodaySalesType(),
           count: DEFAULT_TRIGGER_COUNT,
         };
 
@@ -151,6 +161,8 @@ export class WebhookService {
           event.replyToken,
           text === VIRAL_TRIGGER_TEXT
             ? "収穫案を作りよるけん、ちょい待ってね。"
+            : text === CURRENT_AFFAIRS_TRIGGER_TEXT
+              ? "時事ネタ案を作りよるけん、ちょい待ってね。"
             : "種まき案を作りよるけん、ちょい待ってね。",
         );
 

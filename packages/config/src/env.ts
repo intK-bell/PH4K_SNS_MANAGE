@@ -25,6 +25,7 @@ export interface AppEnv {
   xAccessToken: string;
   xAccessTokenSecret: string;
   xBearerToken: string;
+  xProfileTrackingShortId: string;
   openAiApiKey: string;
   openAiModel: string;
   openAiPromptVersion: string;
@@ -80,7 +81,7 @@ export const loadEnv = (): AppEnv => ({
   lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
   lineChannelSecret: process.env.LINE_CHANNEL_SECRET ?? "",
   lineUserId: process.env.LINE_USER_ID ?? "",
-  xAppBaseUrl: process.env.APP_BASE_URL ?? "https://x.com",
+  xAppBaseUrl: process.env.X_APP_BASE_URL?.trim() || "https://x.com",
   metricFetchSchedulerGroupName: process.env.METRIC_FETCH_SCHEDULER_GROUP_NAME ?? "default",
   metricFetchLambdaArn: process.env.FETCH_POST_METRICS_LAMBDA_ARN ?? "",
   schedulerExecutionRoleArn: process.env.SCHEDULER_EXECUTION_ROLE_ARN ?? "",
@@ -96,6 +97,7 @@ export const loadEnv = (): AppEnv => ({
   xAccessToken: process.env.X_ACCESS_TOKEN ?? "",
   xAccessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET ?? "",
   xBearerToken: process.env.X_BEARER_TOKEN ?? "",
+  xProfileTrackingShortId: process.env.X_PROFILE_TRACKING_SHORT_ID ?? "profile-x",
   openAiApiKey: process.env.OPENAI_API_KEY ?? "",
   openAiModel: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
   openAiPromptVersion: process.env.OPENAI_PROMPT_VERSION ?? "v1",

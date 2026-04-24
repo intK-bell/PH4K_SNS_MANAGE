@@ -21,6 +21,7 @@ export const validateGenerateCandidatesInput = (input: unknown): GenerateCandida
     "light_achievement",
     "cta",
     "constraint",
+    "current_affairs",
     "viral",
   ];
 

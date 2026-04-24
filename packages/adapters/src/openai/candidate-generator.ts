@@ -9,6 +9,7 @@ const SALES_ROLE_DESCRIPTIONS: Record<Exclude<GenerateCandidatesInput["type"], "
   light_achievement: "「自分だけじゃない」と思わせる",
   cta: "少し話を聞きたい、で終える",
   constraint: "高い・難しい・使われない等を入れる",
+  current_affairs: "最近の話題や社会変化に引っかけて『今この話をする理由』を作る",
 };
 const TYPE_LABELS: Record<GenerateCandidatesInput["type"], string> = {
   awareness: "気づき喚起型",
@@ -18,6 +19,7 @@ const TYPE_LABELS: Record<GenerateCandidatesInput["type"], string> = {
   light_achievement: "共感型",
   cta: "CTA型",
   constraint: "制約型",
+  current_affairs: "時事ネタ型",
   viral: "拡散特化型",
 };
 const TYPE_PROMPT_RULES: Record<
@@ -98,6 +100,16 @@ const TYPE_PROMPT_RULES: Record<
     ],
     avoid: ["他社批判", "高機能すぎる印象", "解決を断言しすぎる表現"],
   },
+  current_affairs: {
+    hookIntent: "最近の話題や社会の空気感に触れつつ、現場の課題へ自然につなげる",
+    bodySteps: [
+      "最近話題になりやすい変化や空気感を一言で置く",
+      "それが現場の写真整理や報告負担とどうつながるか示す",
+      "一般論で終わらず、現場担当者の実感へ寄せる",
+      "話題消費ではなく、今見直す意味で締める",
+    ],
+    avoid: ["未確認の固有名詞断定", "政治や炎上への過度な寄せ", "ニュース本文の要約だけで終わる構成"],
+  },
   viral: {
     hookIntent: "第三者も「それ変やね」と反応したくなる違和感を作る",
     bodySteps: [
@@ -139,6 +151,12 @@ const buildSalesPrompt = (
   landingUrl: string,
 ): string => {
   const rules = TYPE_PROMPT_RULES[input.type];
+  const todayJst = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
   return `あなたは、BtoBの現場課題に強いSNS投稿ライターです。
 X向けの投稿文を${input.count}本生成してください。
@@ -191,9 +209,18 @@ ${landingUrl}
 - 共感型: 「自分だけじゃない」と思わせる
 - CTA型: 少し話を聞きたい、で終える
 - 制約型: 高い・難しい・使われない等を入れる
+- 時事ネタ型: 最近の話題や社会変化に引っかけて「今この話をする理由」を作る
 
 # この型で避ける言い回し
 ${rules.avoid.map((item) => `- ${item}`).join("\n")}
+
+${input.type === "current_affairs"
+    ? `# 時事ネタ型の追加ルール
+- 今日の日付は ${todayJst}
+- 最近話題になりやすい社会変化、制度変更、季節要因、業界の空気感に乗せて書く
+- ただし未確認のニュース固有名詞や事実を断定しない
+- ニュースそのものの説明ではなく、現場課題に接続する`
+    : ""}
 
 # 禁止
 - 同じ表現の繰り返し
@@ -267,6 +294,61 @@ ${INTERNAL_OPERATION_KEYWORDS.map((item) => `- ${item}`).join("\n")}
 
 # 出力
 JSONで出力すること。各要素は "hook" と "body" を必ず持つこと。`;
+};
+
+const buildCurrentAffairsPrompt = (
+  idea: Idea,
+  input: GenerateCandidatesInput,
+): string => {
+  const todayJst = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  return `あなたは、X向けの短文コピーライターです。
+時事ネタ型の投稿候補を${input.count}本生成してください。
+
+# 目的
+- 最近よく見かける言葉、流行り言葉、話題の表現を主語にして
+- 現場の写真整理、報告、共有の負担へつなぐ
+- ワンセンテンスだけで成立する候補を作る
+
+# 今日の日付
+- ${todayJst}
+
+# ネタ
+テーマ: ${idea.title}
+課題: ${idea.problem}
+詳細: ${idea.detail}
+
+# 必須ルール
+- 各候補は必ず1文だけ
+- 各候補の主語は「最近流行っている言葉」「今よく見かける言い回し」「最近話題の表現」にする
+- 1候補ごとに主語を変える
+- body は空文字にする
+- ハッシュタグ不要
+- 固有名詞の断定や未確認ニュースの断定は禁止
+- 売り込み文にしない
+- ニュース解説にしない
+- 5候補とも切り口を変える
+
+# 例の方向性
+- 「タイパ」が話題やけど、写真整理だけはまだ帰社後に時間を溶かしがち。
+- 「生成AI」が当たり前になっても、現場写真の報告整理はまだ人力で詰まりやすい。
+
+# 禁止
+- 2文以上
+- 箇条書き
+- 接続詞でだらだら続く長文
+- 以下の内部運用用語を本文に出さない
+${INTERNAL_OPERATION_KEYWORDS.map((item) => `- ${item}`).join("\n")}
+
+# 出力
+JSONで出力すること。各要素は "hook" と "body" を必ず持つこと。
+- hook: ワンセンテンス本文
+- body: 必ず空文字`;
 };
 
 const normalizeBody = (body: string, landingUrl: string): string => {
@@ -371,7 +453,10 @@ export class OpenAiCandidateGenerator {
     };
   }
 
-  async generate(idea: Idea, input: GenerateCandidatesInput): Promise<GeneratedCandidateDraft[]> {
+  async generate(
+    idea: Idea,
+    input: GenerateCandidatesInput,
+  ): Promise<GeneratedCandidateDraft[]> {
     if (this.apiKey.trim() === "") {
       throw new Error("OPENAI_API_KEY is required");
     }
@@ -380,7 +465,9 @@ export class OpenAiCandidateGenerator {
     const prompt =
       input.type === "viral"
         ? buildHarvestPrompt(idea, input, landingUrl)
-        : buildSalesPrompt(idea, input, landingUrl);
+        : input.type === "current_affairs"
+          ? buildCurrentAffairsPrompt(idea, input)
+          : buildSalesPrompt(idea, input, landingUrl);
 
     const response = await this.fetchImpl(OPENAI_RESPONSES_ENDPOINT, {
       method: "POST",
@@ -423,7 +510,10 @@ export class OpenAiCandidateGenerator {
       type: input.type,
       promptVersion: this.promptVersion,
       hook: item.hook.trim(),
-      body: normalizeBody(item.body, landingUrl),
+      body:
+        input.type === "current_affairs"
+          ? item.body.trim()
+          : normalizeBody(item.body, landingUrl),
     }));
   }
 }

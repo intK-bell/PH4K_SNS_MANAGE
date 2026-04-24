@@ -351,3 +351,83 @@
 - あわせて tracking link / shortId の生成タイミングを `候補選択時` から `X 投稿成功後` へ移し、失敗投稿では tracking レコード自体を作らない実装へ切り替えた
 - 上記変更を `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` で本番反映し、`IdeasApiHandler / PublishSelectedPostHandler / PurgeStaleCandidatesHandler / SyncToSpreadsheetHandler` の更新が CloudFormation 上で完了した
 - E2E レビューでは、`PublishSelectedPost` が `X publish -> posts保存 -> tracking保存 -> candidate更新` を 1 Lambda 内で順に実行しており、この途中で失敗すると tweet だけ live のまま Step Functions 全体は失敗扱いになり、schedule 作成以降 (`metrics取得 / スプシ転記`) が走らないリスクを確認した
+- 2026-04-20 14:12 JST の LINE 起点投稿失敗を追加調査し、`post-publish-8c6be1f8-54f4-44d3-b6ec-0a516a6639df-1776661970799` は今回も `PublishSelectedPost` で `x publish failed (403): You are not permitted to perform this action.` により停止していたことを Step Functions / CloudWatch で確認した
+- 同 candidate `8c6be1f8-54f4-44d3-b6ec-0a516a6639df` は `selected=true, status=pending` のままで、`posts-dev` に新規 post は作られておらず、停止箇所は今回も `publishSelectedPost -> X API` に限定できた
+- UX 改善として、投稿成功時は `PublishSelectedPost` から LINE へ完了通知を push するように変更し、通知失敗だけでは X 投稿全体を失敗扱いにしないよう `try/catch` で分離した
+- あわせて `postUrl` 生成は `APP_BASE_URL` ではなく `X_APP_BASE_URL` を参照するよう改め、既定値を `https://x.com` に戻した
+- その後、X の Access Token / Secret を再発行して環境変数を更新したあとに再確認したところ、ローカル `.env` ベースの OAuth1 疎通は `users/me` / `POST /2/tweets` ともに 401 だった一方、Lambda `PublishSelectedPostHandler` に入った現行環境変数での `users/me` は 200 で `@gyoumukikaku` を返した
+- このため、少なくとも本番 Lambda に入っている新しい認証情報は read では有効、ローカル `.env` と Lambda 環境変数の間には差分がある可能性が高い、という切り分け結果に更新した
+- 2026-04-20 15:29 JST の `種まきだ！` 実行 `candidate-delivery-idea-001-1776666581868` は `GenerateCandidates` state で失敗し、Step Functions 上の原因は `Sandbox.Timedout: Task timed out after 30.00 seconds` だった
+- `GenerateCandidatesHandler` の CloudWatch Logs でもアプリログを出す前に 30 秒 timeout しており、`PushCandidatesToLine` までは到達していなかった
+- 実装上 `GenerateCandidatesHandler` の Lambda timeout は 30 秒固定で、候補数 5 件の OpenAI Responses 呼び出しがその上限に収まらず、OpenAI 応答待ちのまま Lambda 制限時間に達した可能性が高いと整理した
+- 対応方針として候補数 `count=5` は維持し、`GenerateCandidatesHandler` の Lambda timeout だけを 60 秒へ引き上げることにした
+- 60 秒化後の 2026-04-20 15:45 JST 実行 `candidate-delivery-idea-001-1776667499890` は `SUCCEEDED` し、候補返却側の timeout 問題は解消したことを確認した
+- ただし同じ流れで選択・投稿した `post-publish-2f72fc1c-8d86-4eab-b4f7-b384a32739df-1776667543068` は引き続き `PublishSelectedPost` で `x publish failed (403): You are not permitted to perform this action.` により失敗した
+- 同 candidate `2f72fc1c-8d86-4eab-b4f7-b384a32739df` は `selected=true, status=pending` のままで、timeout 解消後も投稿失敗のボトルネックは依然として X API write 側に残っていると整理した
+- 深掘りとして、本番 Lambda に入っている現行 X credential を使って `POST /2/tweets` に空 payload `{}` を投げる安全検証を行ったところ、応答は `403` ではなく `400 Invalid Request (Please include either text or media in your Tweet.)` だった
+- これは OAuth 1.0a User Context の write 認証自体は通っており、少なくとも「write 権限が無い」「token が完全に不正」という層ではないことを示す結果として整理した
+- あわせて Bearer token 単体で `GET /2/users/me` を叩くと `403 Unsupported Authentication` となり、現行実装が OAuth1 user context を使って read/write している切り分けとも整合した
+- 次の切り分けのため、`PublishSelectedPost` で X 送信直前の `candidateId / shortId / trackingUrl / publishText` を CloudWatch Logs に出す debug ログを追加し、実際に拒否された本文を現物確認できるようにした
+- X プロフィール欄の LP も投稿本文 click tracking 基盤へ寄せる方針に決め、固定 shortId `profile-x` (`X_PROFILE_TRACKING_SHORT_ID` で変更可) を `https://ph4k.aokigk.com/r/profile-x` 形式で運用する設計に整理した
+- 実装では `/r/{shortId}` redirect handler に `profile-x` の予約 shortId を追加し、事前の link record が無くても `clicks-dev` へ `channel=x / surface=profile / postId=PROFILE#x` の click event を保存して `LP_LANDING_URL` へ 302 redirect するようにした
+- 既存の投稿本文由来 tracking link には `channel=x / surface=post` を付与するよう拡張し、今後スプレッドシート側で `post` と `profile` を分けて集計できる下地を入れた
+- 2026-04-24 17:52〜17:59 JST の「LINE から X に投稿できない」事象を追加調査し、同時間帯の `candidate-delivery` 実行 (`17:52:22 / 17:56:36 / 17:59:13 JST`) はすべて `SUCCEEDED`、`post-publish` 実行 (`17:53:12 / 17:57:39 JST`) のみが `PublishSelectedPost` で失敗していたことを Step Functions で確認した
+- 失敗 execution は `post-publish-f715a8ea-93cc-4c37-bc0b-928b834c92a5-1777020792456` と `post-publish-342d3424-2b68-4602-8fad-f4fbbaefd8e6-1777021059064` で、いずれも cause は `x publish failed (403): You are not permitted to perform this action.` やった
+- CloudWatch Logs から `x_publish_request_prepared` を確認し、失敗時の本文はどちらも `https://ph4k.aokigk.com/r/{shortId}` 付きの正常な tracking URL を含んでいたこと、LINE 側ではなく X 投稿 API 呼び出し時点で拒否されていたことを現物で確認した
+- 比較用に直近成功の 2026-04-23 10:58 JST 実行 `post-publish-4e9ab4af-8cf4-4a86-a370-86c40110b9d7-1776909488023` も確認し、同じ branded tracking URL 形式で成功していたため、4/24 失敗の主因は credential 全損より本文の近似・自動化スパム判定寄りの 403 可能性が高いと整理した
+- X 公式 docs (`error troubleshooting`, `POST statuses/update`, `automation rules`, `posts not sending`) も再確認し、403 は重複投稿・自動化スパム・アクセス拒否の広い分類で返りうること、今回の実行結果とは「認証不可」より「本文/ポリシー判定」の方が整合するという調査メモを残した
+- 再発時の切り分けを速くするため、`XPublisherClient` の失敗時 error に raw response payload まで含めるよう修正し、次回の 403 では code/detail/title を CloudWatch 上でそのまま確認できるようにした
+- あわせて `xAppBaseUrl` の既定値が `APP_BASE_URL` を見ていた箇所を `X_APP_BASE_URL` 優先へ揃え、空文字が入っても `https://x.com` へ倒れるよう `packages/config` と CDK の `PublishSelectedPostHandler` env を補正した
+- 上記の調査ログ強化と `X_APP_BASE_URL` 補正について `pnpm -r build` 成功まで確認し、このあと `Ph4kSnsApplicationStack` を再デプロイして本番反映する段取りにした
+- `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を実行し、`Ph4kSnsApplicationStack` の更新が `2026-04-24 19:07 JST` 頃に `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- デプロイ後に `PublishSelectedPostHandler` の env を現物確認し、`X_APP_BASE_URL=https://x.com`、`CLICK_TRACKING_BASE_URL=https://ph4k.aokigk.com`、`LINE_USER_ID` が本番値で入っていることを確認した
+- あわせて最新の `IdeasApiHandler` 実 function (`Ph4kSnsApplicationStack-IdeasApiHandler812AC48D-OSJLTvH4ljFW`) の env も確認し、`CLICK_TRACKING_BASE_URL=https://ph4k.aokigk.com` と `APP_BASE_URL=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod` が意図どおり反映されていることを確認した
+- 2026-04-24 19:22 JST の再試行も追加調査し、`candidate-delivery-idea-001-1777026078822` は `19:21:19 JST` 開始で `SUCCEEDED`、続く `post-publish-12f20a70-6af2-41a9-88f8-5dab620588b0-1777026123419` は `19:22:03 JST` 開始で `PublishSelectedPost` にて再び失敗していたことを確認した
+- 今回はデプロイ済みの詳細ログが有効になっており、Step Functions / CloudWatch ともに error は `x publish failed (403): You are not permitted to perform this action.; response={"detail":"You are not permitted to perform this action.","type":"about:blank","title":"Forbidden","status":403}` と確認できた
+- 送信直前ログの `publishText` は `「写真整理、現場より帰社後のほうが長い日ある。」` で始まる本文と `https://ph4k.aokigk.com/r/72zNRvsJ` を含んでおり、tracking URL 破損や env 欠落ではなく、X 側が本文自体を generic 403 で拒否している状態が継続していると整理した
+- 再発防止として「似た内容だと X に弾かれうる」前提で backend 側の近似投稿ガードを入れる方針に決め、生成時と publish 時の 2 段で対策することにした
+- 生成時対策として `GenerateCandidatesHandler` から同一 `ideaId` の直近 selected / posted candidate を最大 5 件ひろい、OpenAI prompt に `直近の既出投稿` として渡して導入・構文・改行リズム・締め方まで被らせない制約を追加した
+- publish 時対策として `PublishSelectedPost` に同一 `ideaId` の直近 selected / pending / posted candidate との近似判定を追加し、char bigram ベースの similarity が `0.22` 以上なら X API を呼ぶ前に `publish blocked` で停止するよう修正した
+- 近似判定は URL 差分に引っ張られないよう本文比較前に URL 除去・記号圧縮を行う `calculatePostTextSimilarity` を `packages/adapters/src/x/post-text.ts` に追加した
+- 上記の近似投稿ガード実装後に `pnpm -r build` を再実行し、workspace 全体の TypeScript build 成功を確認した
+- そのまま `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を再実行し、`GenerateCandidatesHandler` と `PublishSelectedPostHandler` を含む `Ph4kSnsApplicationStack` の更新が `2026-04-24 19:30 JST` 頃に `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- 2026-04-24 19:36 JST の再試行は `post-publish-e9572fdf-5f9a-4b84-ad1e-3a24c7f1c1cf-1777026967940` で失敗したが、今回は X API 403 ではなく backend 側の近似投稿ガードが `matchedCandidateId=342d3424-2b68-4602-8fad-f4fbbaefd8e6`, `similarity=0.363` と判定して publish 前に停止していたことを CloudWatch Logs で確認した
+- この時点で比較元になった candidate は過去失敗の `pending` 残骸やったため、運用判断として「失敗した pending candidate は無効でよい」に合わせ、publish worker 失敗時は当該 candidate を `closed` に戻すよう修正した
+- あわせて、生成回避の参照元を DynamoDB candidate だけでなく Google Sheets `投稿管理` シートにも広げ、`フック / 本文` を読み出して prompt 側の `直近の既出投稿` へ混ぜるよう変更した
+- `GoogleSheetsClient` に `listRecentPostManagementRows()` を追加し、直近 10 行の `投稿管理` データを読み取れるようにしたうえで、`GenerateCandidatesHandler` から `recentAvoidTexts` に候補履歴とスプシ履歴の両方を渡す構成へ更新した
+- 上記の pending 無効化と Sheets 参照追加後に `pnpm -r build` を実行し、workspace 全体の TypeScript build 成功を確認した
+- そのまま `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を再実行し、`GenerateCandidatesHandler / PublishSelectedPostHandler / SyncToSpreadsheetHandler` を含む `Ph4kSnsApplicationStack` の更新が `2026-04-24 19:46 JST` 頃に `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- 2026-04-24 19:48 JST の再試行では `candidate-delivery-idea-001-1777027645655` が `19:47:25 JST` 開始で `SUCCEEDED`、続く `post-publish-b34a9197-3ef2-4165-a948-c254e4d98e08-1777027689613` が `19:48:09 JST` 開始で `FAILED` したことを確認した
+- 今回も X API 呼び出し前の近似投稿ガードが発火しており、CloudWatch Logs では `matchedCandidateId=49e67bd4-1104-4b6b-844a-52b9dfea865d`, `matchedCandidateStatus=posted`, `similarity=0.3120567375886525` と記録されていた
+- つまり 19:36 の失敗が `pending` 残骸起因やったのに対し、19:48 は実際に posted 済みの過去候補と近い文面として backend 側が停止させた形で、今回のガードは意図どおり「X に投げる前に既出寄り投稿を遮断する」動きをしていると整理した
+- ここまでで「生成は通るが publish 直前で similarity guard に落ちる」状態が続いたため、対策を publish 側だけでなく `GenerateCandidates` 側へ前倒しする方針に切り替えた
+- `GenerateCandidatesHandler` を拡張し、`recentAvoidTexts` を prompt に渡すだけでなく、生成結果そのものも既出テキスト・採用済みテキストと char bigram similarity で照合し、しきい値 `0.2` 以上の draft はその場で棄却するよう修正した
+- 棄却で本数が足りなくなった場合は最大 3 回まで追加生成を回し、`acceptedTexts / rejectedTexts / スプシ投稿履歴 / 既存候補履歴` をまとめて OpenAI prompt の回避材料へ追加しながら必要本数を埋める構成にした
+- それでも所定本数を作れん場合は `candidate generation could not produce enough distinct drafts` で落とすようにし、「似た候補をLINEへ出してから publish 段で止まる」より前に検知できるよう整理した
+- 上記の生成段再試行ガード追加後に `pnpm -r build` を実行し、workspace 全体の TypeScript build 成功を確認した
+- そのまま `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を再実行し、`GenerateCandidatesHandler` を含む `Ph4kSnsApplicationStack` の更新が `2026-04-24 19:54 JST` 頃に `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- 運用判断として「類似で止める」方式は取りやめることにし、この日追加した similarity guard / Sheets 既出参照 / 生成段再試行ガードはコードから元に戻す方針へ切り替えた
+- その代わり、LINE リッチメニューから `時事ネタ` という文字列を送った時に専用の候補束を作れるよう、投稿型 `current_affairs` を追加する方針にした
+- 実装では `PostType / GenerateCandidatesInput / 各 validation` に `current_affairs` を追加し、`WebhookService` で `時事ネタ` テキストを受けたら `type=current_affairs` の candidate-delivery を起動するよう更新した
+- `OpenAiCandidateGenerator` には `時事ネタ型` の role / intent / body steps / avoid phrases を追加し、「最近の話題や社会変化に引っかけて今この話をする理由を作る」方向の prompt で候補を生成するようにした
+- `LineMessagingClient` の型ラベルにも `時事ネタ型` を追加し、候補一覧の案内文でも表示できるようにした
+- 上記の巻き戻しと `時事ネタ` 型追加後に `pnpm -r build` を実行し、workspace 全体の TypeScript build 成功を確認した
+- そのまま `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を実行し、`IdeasApiHandler / GenerateCandidatesHandler / PushCandidatesToLineHandler / PublishSelectedPostHandler` を含む `Ph4kSnsApplicationStack` の更新が `2026-04-24 20:05 JST` 頃に `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- 追加要望に合わせて `時事ネタ` 型の生成仕様をさらに専用化し、「流行っている言葉を主語にしたワンセンテンスを 5 候補」「body は空文字」という形へ変更した
+- `OpenAiCandidateGenerator` では `current_affairs` を通常の sales prompt から分離し、最近よく見かける言葉・話題の表現を主語にして現場課題へつなぐ 1 文だけを返す専用 prompt `buildCurrentAffairsPrompt` を追加した
+- あわせて `current_affairs` の候補保存時は `body` を LP リンクで自動補完せず空文字のまま保持するようにし、LINE 上の候補表示もワンセンテンス主体になるよう整理した
+- 上記の `時事ネタ` ワンセンテンス化後に `pnpm -r build` を実行し、workspace 全体の TypeScript build 成功を確認した
+- そのまま `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を再実行し、`GenerateCandidatesHandler` を含む `Ph4kSnsApplicationStack` の更新が `2026-04-24 20:11 JST` 頃に `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- 2026-04-24 20:xx JST の再確認で、`時事ネタ` だけ候補が届かない原因をコード上から見直し、`current_affairs` 候補は `body=""` で保存する設計なのに、LINE Flex の候補カード側が空文字の本文テキスト要素を常に出していたことを確認した
+- `LineMessagingClient` の候補カード表示を修正し、`body` が空の候補は本文欄に `hook` をそのままプレビュー表示するように変更した。これで `時事ネタ` のワンセンテンス候補でも LINE push が invalid message にならずに送れる前提へ揃えた
+- 2026-04-24 20:21 JST の `時事ネタ` 投稿を追加確認したところ、`post-publish-1a1fa3e1-ae8c-4b0f-9a84-ac6ea8866361-1777029695219` は `SUCCEEDED` しており、`PublishSelectedPost -> CreateMetricFetchSchedule` まで完走していた
+- 同 execution の出力では `candidateId=1a1fa3e1-ae8c-4b0f-9a84-ac6ea8866361`, `type=current_affairs`, `hook=「タイパ」が当たり前になっても、現場写真の並べ直しだけは帰社後にじわじわ時間を持っていく。`, `externalPostId=2047637083356045515`, `postUrl=https://x.com/i/web/status/2047637083356045515` を確認し、20:21 時点の失敗要因は検出されなかった
+- 追加要望として「投稿できたら LINE に戻してほしい」「時事ネタは LP リンク不要」を受け、`PublishSelectedPost` を更新した
+- `current_affairs` 投稿では tracking shortId / click tracking link を作らず、X 本文にも LP リンクを付けないよう分岐を追加した
+- あわせて投稿成功後は `LINE_USER_ID` 宛てに `Xに投稿したばい。` と `postUrl` を push 通知するように戻し、通知失敗は warn ログに残すだけで投稿全体は成功扱いのまま進めるようにした

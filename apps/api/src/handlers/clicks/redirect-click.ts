@@ -9,6 +9,7 @@ import { HttpError, redirect } from "../../lib/http.js";
 const env = loadEnv();
 const client = createDynamoDocumentClient(env.awsRegion);
 const clickTrackingRepository = new DynamoClickTrackingRepository(client, env.clicksTableName);
+const PROFILE_TRACKING_POST_ID = "PROFILE#x";
 
 const getShortId = (event: ApiGatewayEvent): string => {
   const direct = event.pathParameters?.shortId;
@@ -34,6 +35,22 @@ export const redirectClick = async (event: ApiGatewayEvent) => {
   const shortId = getShortId(event);
   const link = await clickTrackingRepository.getLinkByShortId(shortId);
 
+  if (!link && shortId === env.xProfileTrackingShortId.trim()) {
+    const ipAddressHeader = getHeader(event, "x-forwarded-for");
+    await clickTrackingRepository.createClickEvent({
+      shortId,
+      postId: PROFILE_TRACKING_POST_ID,
+      channel: "x",
+      surface: "profile",
+      clickedAt: new Date().toISOString(),
+      userAgent: getHeader(event, "user-agent"),
+      referer: getHeader(event, "referer"),
+      ipAddress: ipAddressHeader?.split(",")[0]?.trim() || null,
+    });
+
+    return redirect(env.lpLandingUrl.trim());
+  }
+
   if (!link) {
     throw new HttpError(404, "click link not found");
   }
@@ -42,6 +59,8 @@ export const redirectClick = async (event: ApiGatewayEvent) => {
   await clickTrackingRepository.createClickEvent({
     shortId,
     postId: link.postId,
+    channel: link.channel ?? "x",
+    surface: link.surface ?? "post",
     clickedAt: new Date().toISOString(),
     userAgent: getHeader(event, "user-agent"),
     referer: getHeader(event, "referer"),

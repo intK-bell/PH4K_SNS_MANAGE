@@ -25,6 +25,7 @@ export interface GenerateCandidatesInput {
     | "light_achievement"
     | "cta"
     | "constraint"
+    | "current_affairs"
     | "viral";
   count: number;
 }

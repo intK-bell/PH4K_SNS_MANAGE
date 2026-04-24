@@ -21,6 +21,7 @@ interface XAuthConfig {
 }
 
 const X_API_BASE_URL = "https://api.x.com/2";
+const DEFAULT_X_PUBLIC_BASE_URL = "https://x.com";
 
 const encode = (value: string): string =>
   encodeURIComponent(value)
@@ -135,14 +136,21 @@ export class XPublisherClient {
         payload.title ??
         payload.raw ??
         `status ${response.status}`;
-      throw new Error(`x publish failed (${response.status}): ${detail}`);
+      const debugPayload = rawText.trim() !== "" ? rawText : JSON.stringify(payload);
+      throw new Error(
+        `x publish failed (${response.status}): ${detail}; response=${debugPayload}`,
+      );
     }
 
     const externalPostId = payload.data.id;
     const postedAt = new Date().toISOString();
+    const publicBaseUrl =
+      this.config.publicBaseUrl.trim() !== ""
+        ? this.config.publicBaseUrl.replace(/\/$/, "")
+        : DEFAULT_X_PUBLIC_BASE_URL;
     return {
       externalPostId,
-      postUrl: `${this.config.publicBaseUrl.replace(/\/$/, "")}/i/web/status/${externalPostId}`,
+      postUrl: `${publicBaseUrl}/i/web/status/${externalPostId}`,
       postedAt,
     };
   }

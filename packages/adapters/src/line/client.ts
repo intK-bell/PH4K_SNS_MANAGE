@@ -17,6 +17,7 @@ const TYPE_LABELS: Record<PostType, string> = {
   light_achievement: "共感型",
   cta: "CTA型",
   constraint: "制約型",
+  current_affairs: "時事ネタ型",
   viral: "拡散特化型",
 };
 
@@ -41,6 +42,9 @@ const buildCandidateSummary = (candidate: Candidate): string =>
 
 const buildColumnTitle = (candidate: Candidate): string =>
   truncate(candidate.hook || `${candidate.type}案`, 40);
+
+const buildCandidateBodyPreview = (candidate: Candidate): string =>
+  truncate(candidate.body.trim() === "" ? candidate.hook : candidate.body, 240);
 
 const isCandidateAction = (action: string): action is LineCandidateAction =>
   [
@@ -79,6 +83,7 @@ const assertPostType = (value: unknown): PostType => {
     "light_achievement",
     "cta",
     "constraint",
+    "current_affairs",
     "viral",
   ];
 
@@ -163,6 +168,21 @@ export class LineMessagingClient {
     await this.replyMessages(replyToken, [{ type: "text", text }]);
   }
 
+  async pushMessages(userId: string, messages: LineMessage[]): Promise<void> {
+    if (!this.channelAccessToken || !userId || messages.length === 0) {
+      return;
+    }
+
+    await this.sendMessages(LINE_PUSH_ENDPOINT, {
+      to: userId,
+      messages,
+    });
+  }
+
+  async pushText(userId: string, text: string): Promise<void> {
+    await this.pushMessages(userId, [{ type: "text", text }]);
+  }
+
   buildSelectionConfirmationMessage(candidateId: string, previewText: string): LineMessage {
     return {
       type: "flex",
@@ -231,7 +251,7 @@ export class LineMessagingClient {
     return {
       type: "text",
       text:
-        type === "viral"
+        type === "viral" || type === "current_affairs"
           ? `今日は${TYPE_LABELS[type]}だよ。気になる案を見てみてね。`
           : `今日は${TYPE_LABELS[type]}だよ。気になる案を選んでね。`,
     };
@@ -255,7 +275,7 @@ export class LineMessagingClient {
           },
           {
             type: "text",
-            text: truncate(candidate.body, 240),
+            text: buildCandidateBodyPreview(candidate),
             size: "sm",
             wrap: true,
           },
@@ -382,9 +402,6 @@ export class LineMessagingClient {
     }
 
     const messages = [this.buildIntroMessage(candidates), ...this.buildCandidateCarouselMessages(candidates)];
-    await this.sendMessages(LINE_PUSH_ENDPOINT, {
-      to: userId,
-      messages,
-    });
+    await this.pushMessages(userId, messages);
   }
 }

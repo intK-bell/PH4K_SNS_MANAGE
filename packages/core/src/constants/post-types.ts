@@ -6,6 +6,7 @@ export const POST_TYPES = [
   "light_achievement",
   "cta",
   "constraint",
+  "current_affairs",
   "viral",
 ] as const;
 
@@ -19,6 +20,7 @@ export const SALES_POST_TYPES: PostType[] = [
   "light_achievement",
   "cta",
   "constraint",
+  "current_affairs",
 ];
 
 export const VIRAL_POST_TYPES: PostType[] = ["viral"];

@@ -3,6 +3,7 @@ import {
   buildPublishPostText,
   buildTrackingUrl,
   createTrackingShortId,
+  LineMessagingClient,
   XPublisherClient,
 } from "@ph4k/adapters";
 import { loadEnv } from "@ph4k/config";
@@ -19,6 +20,7 @@ const client = createDynamoDocumentClient(env.awsRegion);
 const candidateRepository = new DynamoCandidateRepository(client, env.candidatesTableName);
 const postRepository = new DynamoPostRepository(client, env.postsTableName);
 const clickTrackingRepository = new DynamoClickTrackingRepository(client, env.clicksTableName);
+const lineClient = new LineMessagingClient(env.lineChannelAccessToken, env.lineChannelSecret);
 const publisher = new XPublisherClient({
   apiKey: env.xApiKey,
   apiKeySecret: env.xApiKeySecret,
@@ -37,15 +39,30 @@ export const handler = async (event: unknown) => {
   }
 
   const postId = randomUUID();
-  const shortId = createTrackingShortId();
-  const trackingUrl = buildTrackingUrl(
-    env.clickTrackingBaseUrl,
-    shortId,
-    env.lpLandingUrl,
+  const needsLandingUrl = candidate.type !== "current_affairs";
+  const shortId = needsLandingUrl ? createTrackingShortId() : "";
+  const trackingUrl = needsLandingUrl
+    ? buildTrackingUrl(
+        env.clickTrackingBaseUrl,
+        shortId,
+        env.lpLandingUrl,
+      )
+    : "";
+  const publishText = buildPublishPostText(candidate.hook, candidate.body, trackingUrl);
+
+  console.log(
+    JSON.stringify({
+      level: "info",
+      event: "x_publish_request_prepared",
+      candidateId: candidate.candidateId,
+      shortId,
+      trackingUrl,
+      publishText,
+    }),
   );
 
   const published = await publisher.publish({
-    text: buildPublishPostText(candidate.hook, candidate.body, trackingUrl),
+    text: publishText,
     candidateId: candidate.candidateId,
   });
 
@@ -70,21 +87,42 @@ export const handler = async (event: unknown) => {
     spreadsheetSyncError: null,
   });
 
-  await clickTrackingRepository.createLink({
-    shortId,
-    postId,
-    candidateId: candidate.candidateId,
-    type: candidate.type,
-    mode: candidate.type === "viral" ? "harvest" : "seed",
-    landingUrl: env.lpLandingUrl.trim(),
-    createdAt: new Date().toISOString(),
-  });
+  if (needsLandingUrl) {
+    await clickTrackingRepository.createLink({
+      shortId,
+      postId,
+      candidateId: candidate.candidateId,
+      type: candidate.type,
+      mode: candidate.type === "viral" ? "harvest" : "seed",
+      channel: "x",
+      surface: "post",
+      landingUrl: env.lpLandingUrl.trim(),
+      createdAt: new Date().toISOString(),
+    });
+  }
 
   const updatedCandidate = await candidateRepository.updateCandidate(candidate.candidateId, {
     selected: true,
     status: "posted",
-    trackingShortId: shortId,
+    trackingShortId: shortId === "" ? null : shortId,
   });
+
+  try {
+    await lineClient.pushText(
+      env.lineUserId,
+      `Xに投稿したばい。\n${published.postUrl}`,
+    );
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        event: "line_publish_success_notification_failed",
+        candidateId: candidate.candidateId,
+        postId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
 
   return {
     candidate: updatedCandidate,

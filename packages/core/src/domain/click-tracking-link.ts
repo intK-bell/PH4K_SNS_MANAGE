@@ -6,6 +6,8 @@ export interface ClickTrackingLink {
   candidateId: string;
   type: GenerateCandidatesInput["type"];
   mode: "seed" | "harvest";
+  channel?: "x";
+  surface?: "post" | "profile";
   landingUrl: string;
   createdAt: string;
 }

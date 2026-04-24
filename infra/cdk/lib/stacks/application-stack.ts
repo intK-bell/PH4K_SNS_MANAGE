@@ -89,7 +89,7 @@ export class ApplicationStack extends Stack {
       runtime: Runtime.NODEJS_22_X,
       entry: join(projectRoot, "apps", "workers", "src", "handlers", "generateCandidates.ts"),
       handler: "handler",
-      timeout: Duration.seconds(30),
+      timeout: Duration.seconds(60),
       bundling: commonNodejsBundling,
       environment: {
         IDEAS_TABLE_NAME: props.ideasTable.tableName,
@@ -129,9 +129,13 @@ export class ApplicationStack extends Stack {
         X_ACCESS_TOKEN: process.env.X_ACCESS_TOKEN ?? "",
         X_ACCESS_TOKEN_SECRET: process.env.X_ACCESS_TOKEN_SECRET ?? "",
         X_BEARER_TOKEN: process.env.X_BEARER_TOKEN ?? "",
+        X_APP_BASE_URL: process.env.X_APP_BASE_URL?.trim() || "https://x.com",
         APP_BASE_URL: process.env.APP_BASE_URL ?? "",
         LP_LANDING_URL: process.env.LP_LANDING_URL ?? "",
         CLICK_TRACKING_BASE_URL: process.env.CLICK_TRACKING_BASE_URL ?? "",
+        LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
+        LINE_CHANNEL_SECRET: process.env.LINE_CHANNEL_SECRET ?? "",
+        LINE_USER_ID: process.env.LINE_USER_ID ?? "",
       },
     });
 
