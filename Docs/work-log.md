@@ -431,3 +431,19 @@
 - 追加要望として「投稿できたら LINE に戻してほしい」「時事ネタは LP リンク不要」を受け、`PublishSelectedPost` を更新した
 - `current_affairs` 投稿では tracking shortId / click tracking link を作らず、X 本文にも LP リンクを付けないよう分岐を追加した
 - あわせて投稿成功後は `LINE_USER_ID` 宛てに `Xに投稿したばい。` と `postUrl` を push 通知するように戻し、通知失敗は warn ログに残すだけで投稿全体は成功扱いのまま進めるようにした
+- スプレッドシート整理として、Google Sheets client の `ensureSheets` を見直し、存在していれば `Sheet1` と `運用確認` を自動削除するようにした
+- `投稿管理` シートの `postUrl` は legacy データに `/i/web/status/...` や API Gateway origin が残っていて不完全やったため、同期時に `X_APP_BASE_URL` を使って `https://x.com/i/web/status/...` 形式へ正規化して書き戻すようにした
+- `投稿管理` の `リンククリック` は運用上 2 件ぶん過大に見えるケースが続いたため、post 由来 click はシート反映時だけ `max(raw-2, 0)` の補正を入れるようにした
+- `分析` シートは total 行の下に型別集計を並べる順を、型名の昇順から `latestPost.postedAt` の新しい順へ変更し、`投稿管理` も `postedAt` の新しい順で並べ直すようにした
+- KPI は `累計インプレッション` を外し、`X投稿→LPクリック率 / Xプロフ→LPクリック率 / 累計LPクリック` の 3 行へ組み替えた。`累計LPクリック` は投稿経由補正後 click と profile click の合算、`Xプロフ→LPクリック率` は profile click を累計 imp で割った参考指標として扱うようにした
+- スプレッドシート構成を再整理し、`投稿管理` から `いいね率 / 評価` を削除、`分析` の型別 `平均いいね率` は `-` 表示、`KPI` は `累計imp / X投稿→LPクリック率 / Xプロフ→LPクリック率 / 累計LPクリック` の 4 行へ更新した
+- ローカルで `pnpm -r typecheck` を通した後、`SyncToSpreadsheetHandler` 相当を手動実行し、`投稿管理` 9行、`分析` 8行、`KPI` 4行、`ネタ帳` 4行で再同期できることを確認した
+- Docs にシート運用ルールを追記し、`ネタ帳` への直接 idea 追記は現状の正本ではなく次回同期で上書きされること、`横展開` は引用数ではなく派生投稿の運用メモまたは手動管理値として扱うことを明記した
+- LINE webhook の安全対策として、自分以外の LINE `source.userId` から届いた message / postback 操作は受け付けないようにした
+- 実装では `WebhookService` に `LINE_USER_ID` を渡し、各 event の処理前に `event.source.userId === LINE_USER_ID` を確認するガードを追加した。未一致または `LINE_USER_ID` 未設定の場合は副作用を起こさず `mode=unauthorized` として無視する
+- これにより、LINE の署名検証を通過した webhook でも、登録済み運用者以外の `種まきだ！ / 収穫だ！ / 時事ネタ` や候補選択 postback では candidate-delivery / post-publish を起動しない
+- `pnpm --filter @ph4k/api typecheck` と `pnpm -r build` が成功したことを確認した
+- `npx cdk@2.1118.2 deploy Ph4kSnsApplicationStack --require-approval never` を実行し、`2026-04-25 09:42 JST` 頃に `Ph4kSnsApplicationStack` が `UPDATE_COMPLETE` まで到達したことを確認した
+- デプロイ後の公開 URL は維持され、`ApiGatewayBaseUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/`、`LineWebhookUrl=https://2prx2kvdel.execute-api.ap-northeast-1.amazonaws.com/prod/webhooks/line` を継続利用できることを確認した
+- 今回の CDK deploy では作業前から未コミットだったスプレッドシート整理の差分も asset 差分に含まれていたため、`SyncToSpreadsheetHandler` も同時に本番更新された
+- 同時反映された `SyncToSpreadsheetHandler` 側の主な内容は、`投稿管理` から `いいね率 / 評価` を外す、投稿 URL を `https://x.com/i/web/status/...` へ正規化する、投稿クリックを `max(raw-2, 0)` で補正する、profile click を KPI に分けて集計する、`Sheet1 / 運用確認` を legacy sheet として削除する変更

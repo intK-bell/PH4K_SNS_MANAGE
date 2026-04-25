@@ -31,8 +31,6 @@ const POST_MANAGEMENT_HEADERS = [
   "保存",
   "コメント",
   "リンククリック",
-  "いいね率",
-  "評価",
   "横展開",
   "投稿URL",
   "メモ",
@@ -63,6 +61,8 @@ const KPI_HEADERS = [
   "更新日時",
 ];
 
+const LEGACY_SHEET_TITLES = ["Sheet1", "運用確認"];
+
 const IDEA_BACKLOG_HEADERS = [
   "ideaId",
   "title",
@@ -89,8 +89,6 @@ const rowToValues = (row: PostManagementRow): string[] => [
   row.bookmarks,
   row.replies,
   row.urlLinkClicks,
-  row.likeRate,
-  row.evaluation,
   row.horizontalExpansion,
   row.postUrl,
   row.memo,
@@ -539,6 +537,17 @@ export class GoogleSheetsClient {
       });
     }
 
+    for (const legacyTitle of LEGACY_SHEET_TITLES) {
+      const sheetId = sheetProperties.get(legacyTitle)?.sheetId;
+      if (sheetId !== undefined) {
+        requests.push({
+          deleteSheet: {
+            sheetId,
+          },
+        });
+      }
+    }
+
     if (requests.length > 0) {
       await this.request("POST", ":batchUpdate", { requests });
     }
@@ -546,8 +555,9 @@ export class GoogleSheetsClient {
     const refreshedSheetProperties =
       requests.length > 0 ? await this.listSheetProperties() : sheetProperties;
 
-    await this.request("PUT", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:Q1?valueInputOption=RAW", {
-      range: "投稿管理!A1:Q1",
+    await this.request("POST", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:Q1:clear", {});
+    await this.request("PUT", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:O1?valueInputOption=RAW", {
+      range: "投稿管理!A1:O1",
       majorDimension: "ROWS",
       values: [POST_MANAGEMENT_HEADERS],
     });
@@ -608,16 +618,14 @@ export class GoogleSheetsClient {
           95,
           95,
           110,
-          110,
-          100,
           120,
           220,
           220,
         ]),
         ...buildBodyAlignmentRequest(sheetId, POST_MANAGEMENT_HEADERS.length, {
           centerColumns: [1, 2, 6],
-          rightColumns: [7, 8, 9, 10, 11, 12],
-          wrapColumns: [3, 4, 5, 15, 16],
+          rightColumns: [7, 8, 9, 10, 11],
+          wrapColumns: [3, 4, 5, 13, 14],
         }),
         buildBasicFilterRequest(sheetId, POST_MANAGEMENT_HEADERS.length),
         buildPostStatusHighlightRequest(sheetId),
@@ -683,9 +691,9 @@ export class GoogleSheetsClient {
     if (rowIndex) {
       await this.request(
         "PUT",
-        `values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A${rowIndex}:Q${rowIndex}?valueInputOption=RAW`,
+        `values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A${rowIndex}:O${rowIndex}?valueInputOption=RAW`,
         {
-          range: `投稿管理!A${rowIndex}:Q${rowIndex}`,
+          range: `投稿管理!A${rowIndex}:O${rowIndex}`,
           majorDimension: "ROWS",
           values,
         },
@@ -699,9 +707,9 @@ export class GoogleSheetsClient {
 
     await this.request(
       "POST",
-      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A:Q:append?valueInputOption=RAW",
+      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A:O:append?valueInputOption=RAW",
       {
-        range: "投稿管理!A:Q",
+        range: "投稿管理!A:O",
         majorDimension: "ROWS",
         values,
       },
@@ -730,7 +738,7 @@ export class GoogleSheetsClient {
     );
 
     const values = rows.map((row) => rowToValues(row));
-    const range = `投稿管理!A2:Q${Math.max(rows.length + 1, 2)}`;
+    const range = `投稿管理!A2:O${Math.max(rows.length + 1, 2)}`;
     await this.request(
       "PUT",
       `values/${encodeURIComponent(range)}?valueInputOption=RAW`,

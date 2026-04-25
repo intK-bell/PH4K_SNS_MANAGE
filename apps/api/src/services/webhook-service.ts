@@ -2,7 +2,13 @@ import {
   LineMessagingClient,
   parseLineActionData,
 } from "@ph4k/adapters";
-import type { Candidate, GenerateCandidatesInput, LineWebhookRequest, PostType } from "@ph4k/core";
+import type {
+  Candidate,
+  GenerateCandidatesInput,
+  LineWebhookEvent,
+  LineWebhookRequest,
+  PostType,
+} from "@ph4k/core";
 import {
   DynamoCandidateRepository,
   DynamoIdeaRepository,
@@ -45,6 +51,7 @@ export class WebhookService {
     private readonly ideaRepository: DynamoIdeaRepository,
     private readonly workflowClient: WorkflowClient,
     private readonly enableXPublish: boolean,
+    private readonly authorizedLineUserId: string,
   ) {}
 
   private buildConfirmationText(candidate: Candidate): string {
@@ -58,6 +65,13 @@ export class WebhookService {
     if (!signature || !this.lineClient.verifySignature(body, signature)) {
       throw new HttpError(401, "invalid line signature");
     }
+  }
+
+  private isAuthorizedLineUser(event: LineWebhookEvent): boolean {
+    return (
+      this.authorizedLineUserId.trim() !== "" &&
+      event.source?.userId === this.authorizedLineUserId
+    );
   }
 
   private resolveTodaySalesType(): PostType {
@@ -134,6 +148,14 @@ export class WebhookService {
     const results = [];
 
     for (const event of payload.events) {
+      if (!this.isAuthorizedLineUser(event)) {
+        results.push({
+          mode: "unauthorized",
+          sourceType: event.source?.type ?? null,
+        });
+        continue;
+      }
+
       if (event.type === "message" && event.message?.type === "text") {
         const text = event.message.text?.trim();
         if (

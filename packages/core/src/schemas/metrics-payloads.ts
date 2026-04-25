@@ -20,8 +20,6 @@ export interface PostManagementRow {
   bookmarks: string;
   replies: string;
   urlLinkClicks: string;
-  likeRate: string;
-  evaluation: string;
   horizontalExpansion: string;
   postUrl: string;
   memo: string;

@@ -49,4 +49,5 @@ export const webhookService = new WebhookService(
   ideaRepository,
   workflowClient,
   env.enableXPublish,
+  env.lineUserId,
 );

@@ -33,12 +33,29 @@ const JST_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ja-JP", {
   minute: "2-digit",
   hour12: false,
 });
+const PROFILE_TRACKING_POST_ID = "PROFILE#x";
+const POST_LINK_CLICK_OFFSET = 2;
 
-const formatLikeRate = (likes: number | null, impressions: number | null): string => {
-  if (!likes || !impressions) {
+const normalizePostClickCount = (rawCount: number): number =>
+  Math.max(rawCount - POST_LINK_CLICK_OFFSET, 0);
+
+const normalizePostUrl = (value: string | null): string => {
+  const raw = (value ?? "").trim();
+  if (raw === "") {
     return "";
   }
-  return `${((likes / impressions) * 100).toFixed(2)}%`;
+
+  const publicBaseUrl = env.xAppBaseUrl.replace(/\/$/, "");
+  const statusPathMatch = raw.match(/(\/i\/web\/status\/\d+)/);
+  if (statusPathMatch?.[1]) {
+    return `${publicBaseUrl}${statusPathMatch[1]}`;
+  }
+
+  if (raw.startsWith("/")) {
+    return `${publicBaseUrl}${raw}`;
+  }
+
+  return raw;
 };
 
 const formatDateTimeJst = (value: string | null): string => {
@@ -77,52 +94,66 @@ const formatPercent = (value: number | null): string => {
 const buildKpiRows = (
   posts: Array<NonNullable<Awaited<ReturnType<typeof postRepository.getPost>>>>,
   clickCountsByPostId: Map<string, number>,
+  profileClickCount: number,
 ): KpiRow[] => {
   const totalImpressions = posts.reduce(
     (sum, post) => sum + (post.latestImpressions ?? 0),
     0,
   );
-  const totalClicks = posts.reduce(
+  const totalPostClicks = posts.reduce(
     (sum, post) => sum + (clickCountsByPostId.get(post.postId) ?? 0),
     0,
   );
+  const totalLpClicks = totalPostClicks + profileClickCount;
   const impressionTarget = 500_000;
   const clickRateTarget = 5;
-  const actualClickRate =
-    totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+  const actualPostClickRate =
+    totalImpressions > 0 ? (totalPostClicks / totalImpressions) * 100 : 0;
+  const actualProfileClickRate =
+    totalImpressions > 0 ? (profileClickCount / totalImpressions) * 100 : 0;
   const updatedAt = formatDateTimeJst(new Date().toISOString());
+  const totalClickTarget = Math.round(impressionTarget * (clickRateTarget / 100));
 
   return [
     {
-      kpiName: "累計インプレッション",
+      kpiName: "累計imp",
       targetValue: impressionTarget.toLocaleString("ja-JP"),
       actualValue: totalImpressions.toLocaleString("ja-JP"),
       progressRate: formatPercent((totalImpressions / impressionTarget) * 100),
       status: totalImpressions >= impressionTarget ? "達成" : "進行中",
-      note: "目標: 合計50万imp",
+      note: "X投稿の latestImpressions 累計",
       updatedAt,
     },
     {
-      kpiName: "X→LPクリック率",
+      kpiName: "X投稿→LPクリック率",
       targetValue: `${clickRateTarget.toFixed(2)}%`,
-      actualValue: formatPercent(actualClickRate),
-      progressRate: formatPercent((actualClickRate / clickRateTarget) * 100),
-      status: actualClickRate >= clickRateTarget ? "達成" : "進行中",
-      note: `累計クリック ${totalClicks.toLocaleString("ja-JP")} / 累計imp ${totalImpressions.toLocaleString("ja-JP")}`,
+      actualValue: formatPercent(actualPostClickRate),
+      progressRate: formatPercent((actualPostClickRate / clickRateTarget) * 100),
+      status: actualPostClickRate >= clickRateTarget ? "達成" : "進行中",
+      note: `投稿クリック ${totalPostClicks.toLocaleString("ja-JP")} / 累計imp ${totalImpressions.toLocaleString("ja-JP")}（投稿ごとに -${POST_LINK_CLICK_OFFSET} 補正）`,
+      updatedAt,
+    },
+    {
+      kpiName: "Xプロフ→LPクリック率",
+      targetValue: "参考値",
+      actualValue: formatPercent(actualProfileClickRate),
+      progressRate: "",
+      status: "観測",
+      note: `プロフィールクリック ${profileClickCount.toLocaleString("ja-JP")} / 累計imp ${totalImpressions.toLocaleString("ja-JP")}`,
       updatedAt,
     },
     {
       kpiName: "累計LPクリック",
-      targetValue: Math.round(impressionTarget * (clickRateTarget / 100)).toLocaleString("ja-JP"),
-      actualValue: totalClicks.toLocaleString("ja-JP"),
+      targetValue: totalClickTarget.toLocaleString("ja-JP"),
+      actualValue: totalLpClicks.toLocaleString("ja-JP"),
       progressRate: formatPercent(
-        (totalClicks / Math.round(impressionTarget * (clickRateTarget / 100))) * 100,
+        (totalLpClicks / totalClickTarget) * 100,
       ),
       status:
-        totalClicks >= Math.round(impressionTarget * (clickRateTarget / 100))
+        totalLpClicks >= totalClickTarget
           ? "達成"
           : "進行中",
-      note: "クリック数は自前 redirect tracking を正本とする",
+      note: `投稿 ${totalPostClicks.toLocaleString("ja-JP")} + プロフ ${profileClickCount.toLocaleString("ja-JP")}`,
       updatedAt,
     },
   ];
@@ -146,10 +177,8 @@ const buildRow = (
   bookmarks: post.latestBookmarks?.toString() ?? "",
   replies: post.latestReplies?.toString() ?? "",
   urlLinkClicks: String(clickCount),
-  likeRate: formatLikeRate(post.latestLikes, post.latestImpressions),
-  evaluation: "",
   horizontalExpansion: "",
-  postUrl: post.postUrl ?? "",
+  postUrl: normalizePostUrl(post.postUrl),
   memo: "",
 });
 
@@ -231,7 +260,8 @@ const buildAnalysisRows = (
       averageBookmarks: safeAverage(bookmarks),
       averageReplies: safeAverage(replies),
       averageUrlLinkClicks: safeAverage(urlLinkClicks),
-      averageLikeRate: likeRates.length > 0 ? `${safeAverage(likeRates)}%` : "",
+      averageLikeRate:
+        segment === "total" && likeRates.length > 0 ? `${safeAverage(likeRates)}%` : "-",
       latestPostedDate: formatDateTimeJst(latestPost?.postedAt ?? null),
       latestIdeaTitle,
       latestPostId: latestPost?.postId ?? "",
@@ -240,8 +270,8 @@ const buildAnalysisRows = (
 
   allRows.push(buildAggregateRow("total", "all", totals, latestTotalPost ?? null));
 
-  for (const [type, aggregate] of [...grouped.entries()].sort(([left], [right]) =>
-    left.localeCompare(right),
+  for (const [type, aggregate] of [...grouped.entries()].sort(([, left], [, right]) =>
+    (right.latestPost?.postedAt ?? "").localeCompare(left.latestPost?.postedAt ?? ""),
   )) {
     allRows.push(
       buildAggregateRow("type", type, aggregate.posts, aggregate.latestPost),
@@ -309,11 +339,18 @@ export const handler = async (event: unknown) => {
       ideaIds.map((ideaId) => ideaRepository.getIdea(ideaId)),
     );
     const listedIdeas = await ideaRepository.listIdeas();
-    const clickCountsByPostId = new Map(
+    const rawClickCountsByPostId = new Map(
       await Promise.all(
         allPosts.map(async (item) => [item.postId, await clickTrackingRepository.countClicks(item.postId)] as const),
       ),
     );
+    const clickCountsByPostId = new Map(
+      [...rawClickCountsByPostId.entries()].map(([postId, count]) => [
+        postId,
+        normalizePostClickCount(count),
+      ]),
+    );
+    const profileClickCount = await clickTrackingRepository.countClicks(PROFILE_TRACKING_POST_ID);
 
     const candidatesById = new Map(
       allCandidates
@@ -331,6 +368,8 @@ export const handler = async (event: unknown) => {
     );
 
     const postManagementRows = validPosts
+      .slice()
+      .sort((left, right) => (right.postedAt ?? "").localeCompare(left.postedAt ?? ""))
       .map((item) =>
         buildRow(
           item,
@@ -388,7 +427,7 @@ export const handler = async (event: unknown) => {
         },
       },
     );
-    const kpiRows = buildKpiRows(validPosts, clickCountsByPostId);
+    const kpiRows = buildKpiRows(validPosts, clickCountsByPostId, profileClickCount);
     const kpiResult = await retry(() => sheetsClient.replaceKpiRows(kpiRows), {
       attempts: 3,
       initialDelayMs: 1000,
