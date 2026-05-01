@@ -39,7 +39,7 @@ export const handler = async (event: unknown) => {
   }
 
   const postId = randomUUID();
-  const needsLandingUrl = candidate.type !== "current_affairs";
+  const needsLandingUrl = candidate.type === "viral";
   const shortId = needsLandingUrl ? createTrackingShortId() : "";
   const trackingUrl = needsLandingUrl
     ? buildTrackingUrl(
@@ -61,10 +61,37 @@ export const handler = async (event: unknown) => {
     }),
   );
 
-  const published = await publisher.publish({
-    text: publishText,
-    candidateId: candidate.candidateId,
-  });
+  let published: Awaited<ReturnType<typeof publisher.publish>>;
+  try {
+    published = await publisher.publish({
+      text: publishText,
+      candidateId: candidate.candidateId,
+    });
+  } catch (error) {
+    await candidateRepository.updateCandidate(candidate.candidateId, {
+      selected: false,
+      status: "closed",
+      trackingShortId: null,
+    });
+
+    try {
+      await lineClient.pushText(
+        env.lineUserId,
+        `X投稿できんかったばい。\n${error instanceof Error ? error.message : String(error)}`,
+      );
+    } catch (lineError) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          event: "line_publish_failure_notification_failed",
+          candidateId: candidate.candidateId,
+          error: lineError instanceof Error ? lineError.message : String(lineError),
+        }),
+      );
+    }
+
+    throw error;
+  }
 
   const post = await postRepository.createPost({
     postId,

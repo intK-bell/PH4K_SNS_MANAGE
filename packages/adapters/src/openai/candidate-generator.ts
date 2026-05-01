@@ -86,7 +86,7 @@ const TYPE_PROMPT_RULES: Record<
       "課題を短く再提示する",
       "改善後のイメージを見せる",
       "強すぎない CTA を置く",
-      "LP リンクへ自然につなぐ",
+      "詳細確認へ自然につなぐ。ただしURLは書かない",
     ],
     avoid: ["今すぐ", "絶対", "強い押し売り表現"],
   },
@@ -137,6 +137,7 @@ const INTERNAL_OPERATION_KEYWORDS = [
   "運用フロー",
   "投稿案",
 ];
+const JAPANESE_SENTENCE_END_PATTERN = /[。！？!?]/u;
 
 interface OpenAiStructuredCandidateResponse {
   items: Array<{
@@ -148,7 +149,6 @@ interface OpenAiStructuredCandidateResponse {
 const buildSalesPrompt = (
   idea: Idea,
   input: GenerateCandidatesInput,
-  landingUrl: string,
 ): string => {
   const rules = TYPE_PROMPT_RULES[input.type];
   const todayJst = new Intl.DateTimeFormat("ja-JP", {
@@ -173,6 +173,10 @@ X向けの投稿文を${input.count}本生成してください。
 - ハッシュタグ不要
 - 誇張しない
 - フックが最重要
+- 投稿は必ず3センテンスにする
+- hookは1センテンス目にする
+- bodyは2センテンス目と3センテンス目だけにする
+- 各センテンスは短く、1センテンス40字以内を目安にする
 - ${input.count}本とも切り口を変えること
 
 # 投稿型
@@ -198,8 +202,9 @@ ${rules.bodySteps.map((step, index) => `- ${index + 1}段目: ${step}`).join("\n
 - SNS自動運用の内部仕組みの話にはしない
 
 # 必須ルール
-- すべての投稿の最後に必ず以下のリンクをつける
-${landingUrl}
+- hookとbodyを合わせて必ず3センテンスにする
+- URLやリンクは本文に入れない
+- LPへの直接誘導ではなく、課題への共感と詳細確認の余地だけを残す
 
 # 型ごとのルール
 - 気づき喚起型: 「あ、それ自分や」と思わせる
@@ -224,9 +229,11 @@ ${input.type === "current_affairs"
 
 # 禁止
 - 同じ表現の繰り返し
+- 4センテンス以上
 - 抽象的すぎる文章
 - 「効率化できます」などのありきたり表現
 - 強すぎる営業文
+- URL、リンク、https で始まる文字列
 - 以下の内部運用用語を本文に出さない
 ${INTERNAL_OPERATION_KEYWORDS.map((item) => `- ${item}`).join("\n")}
 
@@ -254,6 +261,10 @@ X向け投稿を${input.count}本生成してください。
 - フック最重要
 - 違和感・あるある・ツッコミを重視
 - 売り込み感は出さない
+- 投稿は必ず3センテンスにする
+- hookは1センテンス目にする
+- bodyは2センテンス目と3センテンス目だけにし、URLはbody末尾にだけ入れる
+- 各センテンスは短く、1センテンス40字以内を目安にする
 - ${input.count}本とも切り口を変える
 
 # hookで何を起こすか
@@ -273,6 +284,7 @@ ${rules.bodySteps.map((step, index) => `- ${index + 1}段目: ${step}`).join("\n
 - SNS自動運用の内部仕組みの話にはしない
 
 # 必須ルール
+- hookとbodyを合わせて必ず3センテンスにする
 - すべての投稿の最後に必ず以下のリンクをつける
 ${landingUrl}
 
@@ -287,6 +299,7 @@ ${rules.avoid.map((item) => `- ${item}`).join("\n")}
 
 # 禁止
 - 専門用語だらけ
+- 4センテンス以上
 - 内輪ネタすぎる内容
 - 弱い問いかけ
 - 以下の内部運用用語を本文に出さない
@@ -394,6 +407,50 @@ const normalizeBody = (body: string, landingUrl: string): string => {
   return `${normalized}\n\n${landingUrl}`.trim();
 };
 
+const removeUrls = (value: string): string =>
+  value
+    .replace(/https?:\/\/[^\s]+/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const splitSentences = (value: string): string[] =>
+  value
+    .replace(/\r\n/g, "\n")
+    .split(/(?<=[。！？!?])\s*|\n+/u)
+    .map((item) => item.trim())
+    .filter((item) => item !== "" && !/^https?:\/\//.test(item));
+
+const ensureSentenceEnd = (value: string): string => {
+  const trimmed = value.trim();
+  if (trimmed === "" || JAPANESE_SENTENCE_END_PATTERN.test(trimmed.at(-1) ?? "")) {
+    return trimmed;
+  }
+
+  return `${trimmed}。`;
+};
+
+const normalizeThreeSentenceDraft = (
+  hook: string,
+  body: string,
+  options: { landingUrl?: string } = {},
+): { hook: string; body: string } => {
+  const landingUrl = options.landingUrl?.trim() ?? "";
+  const sentences = splitSentences([hook, body].join("\n"))
+    .map((item) => removeUrls(item))
+    .filter((item) => item !== "")
+    .slice(0, 3)
+    .map(ensureSentenceEnd);
+
+  const [normalizedHook = "", ...bodySentences] = sentences;
+  const normalizedBody = bodySentences.join("\n");
+
+  return {
+    hook: normalizedHook,
+    body: landingUrl === "" ? normalizedBody : normalizeBody(normalizedBody, landingUrl),
+  };
+};
+
 const extractOutputText = (payload: Record<string, unknown>): string => {
   if (typeof payload.output_text === "string" && payload.output_text.trim() !== "") {
     return payload.output_text;
@@ -492,7 +549,7 @@ export class OpenAiCandidateGenerator {
         ? buildHarvestPrompt(idea, input, landingUrl)
         : input.type === "current_affairs"
           ? buildCurrentAffairsPrompt(idea, input)
-          : buildSalesPrompt(idea, input, landingUrl);
+          : buildSalesPrompt(idea, input);
 
     const response = await this.fetchImpl(OPENAI_RESPONSES_ENDPOINT, {
       method: "POST",
@@ -531,14 +588,20 @@ export class OpenAiCandidateGenerator {
     const rawText = extractOutputText(payload);
     const parsed = parseStructuredCandidates(rawText, input.count);
 
-    return parsed.items.map((item) => ({
-      type: input.type,
-      promptVersion: this.promptVersion,
-      hook: item.hook.trim(),
-      body:
+    return parsed.items.map((item) => {
+      const normalized =
         input.type === "current_affairs"
-          ? item.body.trim()
-          : normalizeBody(item.body, landingUrl),
-    }));
+          ? { hook: item.hook.trim(), body: item.body.trim() }
+          : input.type === "viral"
+            ? normalizeThreeSentenceDraft(item.hook, item.body, { landingUrl })
+            : normalizeThreeSentenceDraft(item.hook, item.body);
+
+      return {
+        type: input.type,
+        promptVersion: this.promptVersion,
+        hook: normalized.hook,
+        body: normalized.body,
+      };
+    });
   }
 }
