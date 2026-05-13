@@ -94,6 +94,7 @@ export class DynamoCandidateRepository {
         status: "generated",
         trackingShortId: null,
         promptVersion: draft.promptVersion,
+        language: draft.language,
         lineDeliveryStatus: "not_sent",
         lineDeliveryAttempts: 0,
         lineLastAttemptAt: null,

@@ -1,6 +1,8 @@
 import type { GenerateCandidatesInput, GeneratedCandidateDraft, Idea } from "@ph4k/core";
 
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
+type CandidateLanguage = NonNullable<GenerateCandidatesInput["language"]>;
+type CandidateLineStyle = "one_line" | "three_line";
 const SALES_ROLE_DESCRIPTIONS: Record<Exclude<GenerateCandidatesInput["type"], "viral">, string> = {
   awareness: "「あ、それ自分や」と思わせる",
   overtime: "しんどさ・負担を強めに出す",
@@ -21,6 +23,16 @@ const TYPE_LABELS: Record<GenerateCandidatesInput["type"], string> = {
   constraint: "制約型",
   current_affairs: "時事ネタ型",
   viral: "拡散特化型",
+};
+const LANGUAGE_INSTRUCTIONS: Record<CandidateLanguage, string> = {
+  ja: "日本語。自然な日本語で、必要なら軽い博多弁を混ぜる。",
+  zh: "简体中文。面向现场负责人，语气自然，不要翻译腔。",
+  en: "English. Keep it natural, concise, and suitable for X posts.",
+  vi: "Tiếng Việt. Viết tự nhiên, ngắn gọn, phù hợp bài đăng X.",
+};
+const LINE_STYLE_LABELS: Record<CandidateLineStyle, string> = {
+  one_line: "1行",
+  three_line: "3行",
 };
 const TYPE_PROMPT_RULES: Record<
   GenerateCandidatesInput["type"],
@@ -137,7 +149,7 @@ const INTERNAL_OPERATION_KEYWORDS = [
   "運用フロー",
   "投稿案",
 ];
-const JAPANESE_SENTENCE_END_PATTERN = /[。！？!?]/u;
+const SENTENCE_END_PATTERN = /[。！？!?．.]/u;
 
 interface OpenAiStructuredCandidateResponse {
   items: Array<{
@@ -146,9 +158,16 @@ interface OpenAiStructuredCandidateResponse {
   }>;
 }
 
+interface OpenAiTranslatedCandidateResponse {
+  hook: string;
+  body: string;
+}
+
 const buildSalesPrompt = (
   idea: Idea,
   input: GenerateCandidatesInput,
+  language: CandidateLanguage,
+  lineStyles: CandidateLineStyle[],
 ): string => {
   const rules = TYPE_PROMPT_RULES[input.type];
   const todayJst = new Intl.DateTimeFormat("ja-JP", {
@@ -167,17 +186,21 @@ X向けの投稿文を${input.count}本生成してください。
 # 前提
 - 投稿先はX
 - 読み手は現場で監査・点検・報告をしている担当者
+- 出力言語は ${LANGUAGE_INSTRUCTIONS[language]}
 - 売り込み感は弱くする
 - 短く、改行多めで読みやすくする
 - 1投稿はXの文字数内に収める
 - ハッシュタグ不要
 - 誇張しない
 - フックが最重要
-- 投稿は必ず3センテンスにする
-- hookは1センテンス目にする
-- bodyは2センテンス目と3センテンス目だけにする
-- 各センテンスは短く、1センテンス40字以内を目安にする
+- 投稿は「1行」または「3行」で作る
+- 1行指定の候補は hook だけで成立させ、body は空文字にする
+- 3行指定の候補は hook を1行目、bodyを2行目と3行目にする
+- 各行は短く、1行40字以内を目安にする
 - ${input.count}本とも切り口を変えること
+
+# 候補ごとの行数指定
+${lineStyles.map((style, index) => `- 候補${index + 1}: ${LINE_STYLE_LABELS[style]}`).join("\n")}
 
 # 投稿型
 ${TYPE_LABELS[input.type]}
@@ -197,12 +220,13 @@ ${rules.bodySteps.map((step, index) => `- ${index + 1}段目: ${step}`).join("\n
 詳細: ${idea.detail}
 
 # この投稿で伝える対象サービス
-- 写真を用いる業務監査において、記録・共有・報告の分断をなくし、現場で業務を完結させるサービスを前提に書く
-- 現場担当者の負担、帰社後の写真整理、報告書作成、残業、導入負荷の高さを主要論点とする
+- 写真記録において、撮る・残す・共有するをその場で完結させるサービスを前提に書く
+- 業務監査だけに限定せず、点検、安全パトロール、工事、清掃、店舗巡回など写真記録が発生する現場へ広げる
+- 現場担当者の負担、あと整理、コメント不足、共有の分断、PCでの探し直し、導入負荷の高さを主要論点とする
 - SNS自動運用の内部仕組みの話にはしない
 
 # 必須ルール
-- hookとbodyを合わせて必ず3センテンスにする
+- 候補ごとの行数指定を必ず守る
 - URLやリンクは本文に入れない
 - LPへの直接誘導ではなく、課題への共感と詳細確認の余地だけを残す
 
@@ -245,6 +269,8 @@ const buildHarvestPrompt = (
   idea: Idea,
   input: GenerateCandidatesInput,
   landingUrl: string,
+  language: CandidateLanguage,
+  lineStyles: CandidateLineStyle[],
 ): string => {
   const rules = TYPE_PROMPT_RULES.viral;
 
@@ -257,15 +283,19 @@ X向け投稿を${input.count}本生成してください。
 
 # 前提
 - 投稿先はX
+- 出力言語は ${LANGUAGE_INSTRUCTIONS[language]}
 - 短く、改行多め
 - フック最重要
 - 違和感・あるある・ツッコミを重視
 - 売り込み感は出さない
-- 投稿は必ず3センテンスにする
-- hookは1センテンス目にする
-- bodyは2センテンス目と3センテンス目だけにし、URLはbody末尾にだけ入れる
-- 各センテンスは短く、1センテンス40字以内を目安にする
+- 投稿は「1行」または「3行」で作る
+- 1行指定の候補は hook だけで成立させ、body は空文字にする
+- 3行指定の候補は hook を1行目、bodyを2行目と3行目にする
+- 各行は短く、1行40字以内を目安にする
 - ${input.count}本とも切り口を変える
+
+# 候補ごとの行数指定
+${lineStyles.map((style, index) => `- 候補${index + 1}: ${LINE_STYLE_LABELS[style]}`).join("\n")}
 
 # hookで何を起こすか
 ${rules.hookIntent}
@@ -279,13 +309,14 @@ ${rules.bodySteps.map((step, index) => `- ${index + 1}段目: ${step}`).join("\n
 詳細: ${idea.detail}
 
 # この投稿で伝える対象サービス
-- 写真を用いる業務監査において、記録・共有・報告の分断をなくし、現場で業務を完結させるサービスを前提に書く
+- 写真記録において、撮る・残す・共有するをその場で完結させるサービスを前提に書く
+- 業務監査だけに限定せず、点検、安全パトロール、工事、清掃、店舗巡回など写真記録が発生する現場へ広げる
 - 現場担当者だけでなく、第三者も違和感を持てるように、現場の非効率さを分かりやすく言い換える
 - SNS自動運用の内部仕組みの話にはしない
 
 # 必須ルール
-- hookとbodyを合わせて必ず3センテンスにする
-- すべての投稿の最後に必ず以下のリンクをつける
+- 候補ごとの行数指定を必ず守る
+- 本文にはURLを入れない。投稿時にシステムが以下のリンクを末尾に付ける
 ${landingUrl}
 
 # 強化ルール
@@ -312,6 +343,8 @@ JSONで出力すること。各要素は "hook" と "body" を必ず持つこと
 const buildCurrentAffairsPrompt = (
   idea: Idea,
   input: GenerateCandidatesInput,
+  language: CandidateLanguage,
+  lineStyles: CandidateLineStyle[],
 ): string => {
   const todayJst = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -325,8 +358,9 @@ const buildCurrentAffairsPrompt = (
 
 # 目的
 - 最近よく見かける言葉、流行り言葉、話題の表現を主語にして
-- 現場の写真整理、報告、共有、写真を使った業務監査、監査業務、安全パトロール業務、点検の負担へつなぐ
-- ワンセンテンスだけで成立する候補を作る
+- 現場の写真記録、報告、共有、写真を使った業務監査、安全パトロール、点検の負担へつなぐ
+- 指定された行数で成立する候補を作る
+- 出力言語は ${LANGUAGE_INSTRUCTIONS[language]}
 
 # 今日の日付
 - ${todayJst}
@@ -337,17 +371,22 @@ const buildCurrentAffairsPrompt = (
 詳細: ${idea.detail}
 
 # 必須ルール
-- 各候補は必ず1文だけ
+- 投稿は「1行」または「3行」で作る
+- 1行指定の候補は hook だけで成立させ、body は空文字にする
+- 3行指定の候補は hook を1行目、bodyを2行目と3行目にする
+- 各行は短く、1行40字以内を目安にする
 - 各候補の主語は「最近流行っている言葉」「今よく見かける言い回し」「最近話題の表現」にする
 - 1候補ごとに主語を変える
 - 1候補ごとに下の「流行り言葉カテゴリ」から別カテゴリを選ぶ
-- body は空文字にする
 - ハッシュタグ不要
 - 固有名詞の断定や未確認ニュースの断定は禁止
 - 売り込み文にしない
 - ニュース解説にしない
 - 5候補とも切り口を変える
-- 5候補で「写真整理」「報告」「共有」「業務監査/監査業務」「安全パトロール/点検」の焦点を分散する
+- 5候補で「写真記録」「報告」「共有」「業務監査/監査業務」「安全パトロール/点検」の焦点を分散する
+
+# 候補ごとの行数指定
+${lineStyles.map((style, index) => `- 候補${index + 1}: ${LINE_STYLE_LABELS[style]}`).join("\n")}
 
 # 流行り言葉カテゴリ
 以下から5候補で別カテゴリを選び、同じ系統の言葉に偏らないこと。
@@ -374,7 +413,6 @@ const buildCurrentAffairsPrompt = (
 - 「効率化」が合言葉になるほど、写真を使った安全パトロールや点検の記録整理も見直すタイミングかもしれん。
 
 # 禁止
-- 2文以上
 - 箇条書き
 - 接続詞でだらだら続く長文
 - 「話題やけど」「当たり前になっても」「まだ〜しがち」を連続使用しない
@@ -385,8 +423,8 @@ ${INTERNAL_OPERATION_KEYWORDS.map((item) => `- ${item}`).join("\n")}
 
 # 出力
 JSONで出力すること。各要素は "hook" と "body" を必ず持つこと。
-- hook: ワンセンテンス本文
-- body: 必ず空文字`;
+- hook: 1行目
+- body: 1行指定なら空文字。3行指定なら2行目と3行目を改行区切りで入れる`;
 };
 
 const normalizeBody = (body: string, landingUrl: string): string => {
@@ -415,32 +453,42 @@ const removeUrls = (value: string): string =>
     .trim();
 
 const splitSentences = (value: string): string[] =>
-  value
+  removeUrls(value)
     .replace(/\r\n/g, "\n")
-    .split(/(?<=[。！？!?])\s*|\n+/u)
+    .split(/(?<=[。！？!?．.])\s*|\n+/u)
     .map((item) => item.trim())
-    .filter((item) => item !== "" && !/^https?:\/\//.test(item));
+    .filter((item) => item !== "");
 
-const ensureSentenceEnd = (value: string): string => {
+const ensureSentenceEnd = (value: string, language: CandidateLanguage): string => {
   const trimmed = value.trim();
-  if (trimmed === "" || JAPANESE_SENTENCE_END_PATTERN.test(trimmed.at(-1) ?? "")) {
+  if (trimmed === "" || SENTENCE_END_PATTERN.test(trimmed.at(-1) ?? "")) {
     return trimmed;
   }
 
-  return `${trimmed}。`;
+  return `${trimmed}${language === "en" || language === "vi" ? "." : "。"}`;
 };
 
-const normalizeThreeSentenceDraft = (
+const normalizeLineStyleDraft = (
   hook: string,
   body: string,
+  lineStyle: CandidateLineStyle,
+  language: CandidateLanguage,
   options: { landingUrl?: string } = {},
 ): { hook: string; body: string } => {
   const landingUrl = options.landingUrl?.trim() ?? "";
+  if (lineStyle === "one_line") {
+    const [oneLine = ""] = splitSentences([hook, body].join("\n"));
+    return {
+      hook: ensureSentenceEnd(oneLine, language),
+      body: "",
+    };
+  }
+
   const sentences = splitSentences([hook, body].join("\n"))
     .map((item) => removeUrls(item))
     .filter((item) => item !== "")
     .slice(0, 3)
-    .map(ensureSentenceEnd);
+    .map((item) => ensureSentenceEnd(item, language));
 
   const [normalizedHook = "", ...bodySentences] = sentences;
   const normalizedBody = bodySentences.join("\n");
@@ -450,6 +498,14 @@ const normalizeThreeSentenceDraft = (
     body: landingUrl === "" ? normalizedBody : normalizeBody(normalizedBody, landingUrl),
   };
 };
+
+const buildRandomLineStyles = (count: number): CandidateLineStyle[] =>
+  Array.from(
+    {
+      length: count,
+    },
+    (_, index) => (index < Math.round(count * 0.4) ? "one_line" : "three_line"),
+  ).sort(() => Math.random() - 0.5);
 
 const extractOutputText = (payload: Record<string, unknown>): string => {
   if (typeof payload.output_text === "string" && payload.output_text.trim() !== "") {
@@ -493,6 +549,119 @@ const parseStructuredCandidates = (
 
   return parsed as OpenAiStructuredCandidateResponse;
 };
+
+const parseTranslatedCandidate = (rawText: string): OpenAiTranslatedCandidateResponse => {
+  const parsed = JSON.parse(rawText) as Partial<OpenAiTranslatedCandidateResponse>;
+  if (!parsed || typeof parsed.hook !== "string" || typeof parsed.body !== "string") {
+    throw new Error("openai translated candidate shape is invalid");
+  }
+
+  return parsed as OpenAiTranslatedCandidateResponse;
+};
+
+export class OpenAiCandidateTranslator {
+  constructor(
+    private readonly apiKey: string,
+    private readonly model: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  private buildSchema() {
+    return {
+      name: "translated_candidate_post",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["hook", "body"],
+        properties: {
+          hook: {
+            type: "string",
+          },
+          body: {
+            type: "string",
+          },
+        },
+      },
+    };
+  }
+
+  async translate(input: {
+    hook: string;
+    body: string;
+    language: CandidateLanguage;
+  }): Promise<{ hook: string; body: string }> {
+    if (this.apiKey.trim() === "") {
+      throw new Error("OPENAI_API_KEY is required");
+    }
+
+    const lineStyle: CandidateLineStyle = input.body.trim() === "" ? "one_line" : "three_line";
+    const prompt = `Translate this X post candidate for posting.
+
+# Target language
+${LANGUAGE_INSTRUCTIONS[input.language]}
+
+# Rules
+- Preserve the original meaning and tone.
+- Do not add hashtags.
+- Do not add URLs.
+- If the source is 1 line, return hook only and body as an empty string.
+- If the source is 3 lines, return hook as line 1 and body as lines 2 and 3 separated by a newline.
+- Keep each line concise and natural for X.
+
+# Source
+hook:
+${input.hook}
+
+body:
+${input.body}
+
+# Output
+Return JSON with "hook" and "body".`;
+
+    const response = await this.fetchImpl(OPENAI_RESPONSES_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a precise translation assistant for X posts. Return only valid JSON that matches the provided schema.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            ...this.buildSchema(),
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`openai candidate translation failed: ${response.status} ${body}`);
+    }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const translated = parseTranslatedCandidate(extractOutputText(payload));
+    return normalizeLineStyleDraft(
+      translated.hook,
+      translated.body,
+      lineStyle,
+      input.language,
+    );
+  }
+}
 
 export class OpenAiCandidateGenerator {
   constructor(
@@ -544,12 +713,14 @@ export class OpenAiCandidateGenerator {
     }
 
     const landingUrl = this.lpLandingUrl.trim();
+    const language = input.language ?? "ja";
+    const lineStyles = buildRandomLineStyles(input.count);
     const prompt =
       input.type === "viral"
-        ? buildHarvestPrompt(idea, input, landingUrl)
+        ? buildHarvestPrompt(idea, input, landingUrl, language, lineStyles)
         : input.type === "current_affairs"
-          ? buildCurrentAffairsPrompt(idea, input)
-          : buildSalesPrompt(idea, input);
+          ? buildCurrentAffairsPrompt(idea, input, language, lineStyles)
+          : buildSalesPrompt(idea, input, language, lineStyles);
 
     const response = await this.fetchImpl(OPENAI_RESPONSES_ENDPOINT, {
       method: "POST",
@@ -588,19 +759,29 @@ export class OpenAiCandidateGenerator {
     const rawText = extractOutputText(payload);
     const parsed = parseStructuredCandidates(rawText, input.count);
 
-    return parsed.items.map((item) => {
+    return parsed.items.map((item, index) => {
       const normalized =
-        input.type === "current_affairs"
-          ? { hook: item.hook.trim(), body: item.body.trim() }
-          : input.type === "viral"
-            ? normalizeThreeSentenceDraft(item.hook, item.body, { landingUrl })
-            : normalizeThreeSentenceDraft(item.hook, item.body);
+        input.type === "viral"
+          ? normalizeLineStyleDraft(
+              item.hook,
+              item.body,
+              lineStyles[index] ?? "three_line",
+              language,
+              { landingUrl },
+            )
+          : normalizeLineStyleDraft(
+              item.hook,
+              item.body,
+              lineStyles[index] ?? "three_line",
+              language,
+            );
 
       return {
         type: input.type,
         promptVersion: this.promptVersion,
         hook: normalized.hook,
         body: normalized.body,
+        language,
       };
     });
   }

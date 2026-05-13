@@ -1,6 +1,7 @@
 import type { PostType } from "../constants/post-types.js";
 
 export type LineCandidateAction =
+  | "select_post_language"
   | "select_candidate"
   | "confirm_post"
   | "cancel_post"
@@ -18,6 +19,8 @@ export interface LineWebhookActionPayload {
   ideaId?: string;
   type?: PostType;
   count?: number;
+  trigger?: "sales" | "current_affairs" | "harvest";
+  language?: "ja" | "zh" | "en" | "vi";
 }
 
 export interface LineWebhookEvent {

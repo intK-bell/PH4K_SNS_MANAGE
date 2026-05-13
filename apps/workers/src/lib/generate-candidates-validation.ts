@@ -7,6 +7,7 @@ export const validateGenerateCandidatesInput = (input: unknown): GenerateCandida
 
   const candidate = input as Record<string, unknown>;
   const count = typeof candidate.count === "number" ? candidate.count : 5;
+  const language = candidate.language === undefined ? "ja" : candidate.language;
 
   if (typeof candidate.ideaId !== "string" || candidate.ideaId.trim() === "") {
     throw new Error("ideaId is required");
@@ -24,6 +25,7 @@ export const validateGenerateCandidatesInput = (input: unknown): GenerateCandida
     "current_affairs",
     "viral",
   ];
+  const allowedLanguages = ["ja", "zh", "en", "vi"];
 
   if (!allowed.includes(String(type))) {
     throw new Error("invalid post type");
@@ -33,9 +35,14 @@ export const validateGenerateCandidatesInput = (input: unknown): GenerateCandida
     throw new Error("count must be an integer between 1 and 10");
   }
 
+  if (!allowedLanguages.includes(String(language))) {
+    throw new Error("invalid language");
+  }
+
   return {
     ideaId: candidate.ideaId.trim(),
     type: type as GenerateCandidatesInput["type"],
     count,
+    language: language as NonNullable<GenerateCandidatesInput["language"]>,
   };
 };

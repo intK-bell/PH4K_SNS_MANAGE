@@ -1,4 +1,4 @@
-import { LineMessagingClient } from "@ph4k/adapters";
+import { LineMessagingClient, OpenAiCandidateTranslator } from "@ph4k/adapters";
 import { loadEnv } from "@ph4k/config";
 import {
   createWorkerInvoker,
@@ -22,6 +22,7 @@ const ideaRepository = new DynamoIdeaRepository(documentClient, env.ideasTableNa
 const candidateRepository = new DynamoCandidateRepository(documentClient, env.candidatesTableName);
 const postRepository = new DynamoPostRepository(documentClient, env.postsTableName);
 const lineClient = new LineMessagingClient(env.lineChannelAccessToken, env.lineChannelSecret);
+const candidateTranslator = new OpenAiCandidateTranslator(env.openAiApiKey, env.openAiModel);
 const workerInvoker = createWorkerInvoker(
   env.awsRegion,
   env.pushCandidatesToLineLambdaArn,
@@ -48,6 +49,7 @@ export const webhookService = new WebhookService(
   candidateRepository,
   ideaRepository,
   workflowClient,
+  candidateTranslator,
   env.enableXPublish,
   env.lineUserId,
 );

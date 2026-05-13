@@ -22,6 +22,7 @@ const POST_MANAGEMENT_HEADERS = [
   "ID",
   "投稿日",
   "型",
+  "言語",
   "ネタ",
   "フック",
   "本文",
@@ -80,6 +81,7 @@ const rowToValues = (row: PostManagementRow): string[] => [
   row.id,
   row.postedDate,
   row.type,
+  row.language,
   row.ideaTitle,
   row.hook,
   row.body,
@@ -366,8 +368,8 @@ const buildPostStatusHighlightRequest = (
     range: {
       sheetId,
       startRowIndex: 1,
-      startColumnIndex: 6,
-      endColumnIndex: 7,
+      startColumnIndex: 7,
+      endColumnIndex: 8,
     },
     cell: {
       userEnteredFormat: {
@@ -556,8 +558,8 @@ export class GoogleSheetsClient {
       requests.length > 0 ? await this.listSheetProperties() : sheetProperties;
 
     await this.request("POST", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:Q1:clear", {});
-    await this.request("PUT", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:O1?valueInputOption=RAW", {
-      range: "投稿管理!A1:O1",
+    await this.request("PUT", "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A1:P1?valueInputOption=RAW", {
+      range: "投稿管理!A1:P1",
       majorDimension: "ROWS",
       values: [POST_MANAGEMENT_HEADERS],
     });
@@ -609,6 +611,7 @@ export class GoogleSheetsClient {
           170,
           165,
           135,
+          90,
           220,
           280,
           360,
@@ -623,9 +626,9 @@ export class GoogleSheetsClient {
           220,
         ]),
         ...buildBodyAlignmentRequest(sheetId, POST_MANAGEMENT_HEADERS.length, {
-          centerColumns: [1, 2, 6],
-          rightColumns: [7, 8, 9, 10, 11],
-          wrapColumns: [3, 4, 5, 13, 14],
+          centerColumns: [1, 2, 3, 7],
+          rightColumns: [8, 9, 10, 11, 12],
+          wrapColumns: [4, 5, 6, 14, 15],
         }),
         buildBasicFilterRequest(sheetId, POST_MANAGEMENT_HEADERS.length),
         buildPostStatusHighlightRequest(sheetId),
@@ -691,9 +694,9 @@ export class GoogleSheetsClient {
     if (rowIndex) {
       await this.request(
         "PUT",
-        `values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A${rowIndex}:O${rowIndex}?valueInputOption=RAW`,
+        `values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A${rowIndex}:P${rowIndex}?valueInputOption=RAW`,
         {
-          range: `投稿管理!A${rowIndex}:O${rowIndex}`,
+          range: `投稿管理!A${rowIndex}:P${rowIndex}`,
           majorDimension: "ROWS",
           values,
         },
@@ -707,9 +710,9 @@ export class GoogleSheetsClient {
 
     await this.request(
       "POST",
-      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A:O:append?valueInputOption=RAW",
+      "values/%E6%8A%95%E7%A8%BF%E7%AE%A1%E7%90%86!A:P:append?valueInputOption=RAW",
       {
-        range: "投稿管理!A:O",
+        range: "投稿管理!A:P",
         majorDimension: "ROWS",
         values,
       },
@@ -738,7 +741,7 @@ export class GoogleSheetsClient {
     );
 
     const values = rows.map((row) => rowToValues(row));
-    const range = `投稿管理!A2:O${Math.max(rows.length + 1, 2)}`;
+    const range = `投稿管理!A2:P${Math.max(rows.length + 1, 2)}`;
     await this.request(
       "PUT",
       `values/${encodeURIComponent(range)}?valueInputOption=RAW`,

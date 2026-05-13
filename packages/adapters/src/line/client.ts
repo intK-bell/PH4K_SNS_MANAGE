@@ -20,6 +20,18 @@ const TYPE_LABELS: Record<PostType, string> = {
   current_affairs: "時事ネタ型",
   viral: "拡散特化型",
 };
+const LANGUAGE_LABELS: Record<NonNullable<LineWebhookActionPayload["language"]>, string> = {
+  ja: "日本語",
+  zh: "中国語",
+  en: "英語",
+  vi: "ベトナム語",
+};
+const LANGUAGE_OPTIONS: Array<NonNullable<LineWebhookActionPayload["language"]>> = [
+  "ja",
+  "zh",
+  "en",
+  "vi",
+];
 
 type LineMessage = Record<string, unknown>;
 
@@ -48,6 +60,7 @@ const buildCandidateBodyPreview = (candidate: Candidate): string =>
 
 const isCandidateAction = (action: string): action is LineCandidateAction =>
   [
+    "select_post_language",
     "select_candidate",
     "confirm_post",
     "cancel_post",
@@ -94,10 +107,26 @@ const assertPostType = (value: unknown): PostType => {
   return value as PostType;
 };
 
+const assertLanguage = (value: unknown): NonNullable<LineWebhookActionPayload["language"]> => {
+  if (typeof value !== "string" || !LANGUAGE_OPTIONS.includes(value as NonNullable<LineWebhookActionPayload["language"]>)) {
+    throw new Error("language is required");
+  }
+
+  return value as NonNullable<LineWebhookActionPayload["language"]>;
+};
+
 export const parseLineActionData = (rawData: string): LineWebhookActionPayload => {
   const parsed = JSON.parse(rawData) as Partial<LineWebhookActionPayload>;
   if (!parsed || typeof parsed.action !== "string" || !isCandidateAction(parsed.action)) {
     throw new Error("unsupported line action");
+  }
+
+  if (parsed.action === "select_post_language") {
+    return {
+      action: parsed.action,
+      candidateId: assertString(parsed.candidateId, "candidateId"),
+      language: assertLanguage(parsed.language),
+    };
   }
 
   if (parsed.action === "select_candidate" || parsed.action === "confirm_post" || parsed.action === "cancel_post") {
@@ -120,6 +149,7 @@ export const parseLineActionData = (rawData: string): LineWebhookActionPayload =
     ideaId: assertString(parsed.ideaId, "ideaId"),
     type: assertPostType(parsed.type),
     count: assertCount(parsed.count),
+    language: parsed.language === undefined ? "ja" : assertLanguage(parsed.language),
   };
 };
 
@@ -181,6 +211,59 @@ export class LineMessagingClient {
 
   async pushText(userId: string, text: string): Promise<void> {
     await this.pushMessages(userId, [{ type: "text", text }]);
+  }
+
+  buildPostLanguageSelectionMessage(
+    candidateId: string,
+    previewText: string,
+  ): LineMessage {
+    return {
+      type: "flex",
+      altText: "言語選択",
+      contents: {
+        type: "bubble",
+        size: "mega",
+        body: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          contents: [
+            {
+              type: "text",
+              text: "どの言語で投稿しますか？",
+              weight: "bold",
+              size: "md",
+              wrap: true,
+            },
+            {
+              type: "text",
+              text: truncate(previewText, 220),
+              size: "sm",
+              wrap: true,
+            },
+          ],
+        },
+        footer: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          contents: LANGUAGE_OPTIONS.map((language) => ({
+            type: "button",
+            style: language === "ja" ? "primary" : "secondary",
+            action: {
+              type: "postback",
+              label: LANGUAGE_LABELS[language],
+              data: encodeActionData({
+                action: "select_post_language",
+                candidateId,
+                language,
+              }),
+              displayText: `${LANGUAGE_LABELS[language]}で投稿する`,
+            },
+          })),
+        },
+      },
+    };
   }
 
   buildSelectionConfirmationMessage(candidateId: string, previewText: string): LineMessage {
@@ -344,6 +427,7 @@ export class LineMessagingClient {
                 ideaId: lastCandidate.ideaId,
                 type: lastCandidate.type,
                 count,
+                language: lastCandidate.language ?? "ja",
               }),
               displayText: "再生成する",
             },

@@ -28,4 +28,5 @@ export interface GenerateCandidatesInput {
     | "current_affairs"
     | "viral";
   count: number;
+  language?: "ja" | "zh" | "en" | "vi";
 }

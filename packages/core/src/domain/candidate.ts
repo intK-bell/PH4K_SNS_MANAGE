@@ -12,6 +12,7 @@ export interface Candidate {
   status: CandidateStatus;
   trackingShortId: string | null;
   promptVersion: string;
+  language?: "ja" | "zh" | "en" | "vi";
   lineDeliveryStatus: "not_sent" | "sent" | "failed";
   lineDeliveryAttempts: number;
   lineLastAttemptAt: string | null;

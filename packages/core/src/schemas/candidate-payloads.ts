@@ -13,6 +13,7 @@ export interface UpdateCandidateInput {
   lineLastAttemptAt?: string | null;
   lineNextRetryAt?: string | null;
   lineLastError?: string | null;
+  language?: "ja" | "zh" | "en" | "vi";
 }
 
 export interface GeneratedCandidateDraft {
@@ -20,4 +21,5 @@ export interface GeneratedCandidateDraft {
   hook: string;
   body: string;
   promptVersion: string;
+  language: "ja" | "zh" | "en" | "vi";
 }

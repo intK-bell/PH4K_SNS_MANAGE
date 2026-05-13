@@ -168,6 +168,7 @@ const buildRow = (
   id: post.postId,
   postedDate: formatDateTimeJst(post.postedAt),
   type: candidate.type,
+  language: candidate.language ?? "ja",
   ideaTitle: idea.title,
   hook: candidate.hook,
   body: candidate.body,

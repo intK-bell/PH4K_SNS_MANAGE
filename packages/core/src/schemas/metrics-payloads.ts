@@ -11,6 +11,7 @@ export interface PostManagementRow {
   id: string;
   postedDate: string;
   type: string;
+  language: string;
   ideaTitle: string;
   hook: string;
   body: string;
