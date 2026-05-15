@@ -1,5 +1,11 @@
 import { createSign } from "node:crypto";
-import type { AnalysisRow, IdeaBacklogRow, KpiRow, PostManagementRow } from "@ph4k/core";
+import type {
+  AnalysisRow,
+  IdeaBacklogRow,
+  KpiRow,
+  PostManagementRow,
+  ProfileClickRow,
+} from "@ph4k/core";
 
 const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const SHEETS_BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -60,6 +66,17 @@ const KPI_HEADERS = [
   "判定",
   "メモ",
   "更新日時",
+];
+
+const PROFILE_CLICK_HEADERS = [
+  "クリックNo",
+  "クリック日時",
+  "shortId",
+  "チャネル",
+  "面",
+  "リファラ",
+  "User Agent",
+  "IP",
 ];
 
 const LEGACY_SHEET_TITLES = ["Sheet1", "運用確認"];
@@ -132,6 +149,17 @@ const kpiRowToValues = (row: KpiRow): string[] => [
   row.status,
   row.note,
   row.updatedAt,
+];
+
+const profileClickRowToValues = (row: ProfileClickRow): string[] => [
+  row.clickNo,
+  row.clickedAt,
+  row.shortId,
+  row.channel,
+  row.surface,
+  row.referer,
+  row.userAgent,
+  row.ipAddress,
 ];
 
 const buildHeaderStyleRequest = (
@@ -495,6 +523,7 @@ export class GoogleSheetsClient {
     const hasPostManagement = sheetProperties.has("投稿管理");
     const hasAnalysis = sheetProperties.has("分析");
     const hasKpi = sheetProperties.has("KPI");
+    const hasProfileClicks = sheetProperties.has("プロフリンククリック");
     const hasIdeaBacklog = sheetProperties.has("ネタ帳");
 
     const requests: Array<Record<string, unknown>> = [];
@@ -524,6 +553,16 @@ export class GoogleSheetsClient {
         addSheet: {
           properties: {
             title: "KPI",
+          },
+        },
+      });
+    }
+
+    if (!hasProfileClicks) {
+      requests.push({
+        addSheet: {
+          properties: {
+            title: "プロフリンククリック",
           },
         },
       });
@@ -574,6 +613,12 @@ export class GoogleSheetsClient {
       range: "KPI!A1:G1",
       majorDimension: "ROWS",
       values: [KPI_HEADERS],
+    });
+
+    await this.request("PUT", "values/%E3%83%97%E3%83%AD%E3%83%95%E3%83%AA%E3%83%B3%E3%82%AF%E3%82%AF%E3%83%AA%E3%83%83%E3%82%AF!A1:H1?valueInputOption=RAW", {
+      range: "プロフリンククリック!A1:H1",
+      majorDimension: "ROWS",
+      values: [PROFILE_CLICK_HEADERS],
     });
 
     await this.request("PUT", "values/%E3%83%8D%E3%82%BF%E5%B8%B3!A1:J1?valueInputOption=RAW", {
@@ -663,6 +708,21 @@ export class GoogleSheetsClient {
         }),
         buildBasicFilterRequest(sheetId, KPI_HEADERS.length),
         buildKpiStatusHighlightRequest(sheetId),
+      ],
+    });
+  }
+
+  private async applyProfileClickSheetFormatting(sheetId: number): Promise<void> {
+    await this.request("POST", ":batchUpdate", {
+      requests: [
+        buildFrozenHeaderRequest(sheetId),
+        buildHeaderStyleRequest(sheetId, PROFILE_CLICK_HEADERS.length),
+        ...buildColumnWidthRequests(sheetId, [90, 170, 130, 90, 110, 260, 420, 150]),
+        ...buildBodyAlignmentRequest(sheetId, PROFILE_CLICK_HEADERS.length, {
+          centerColumns: [0, 1, 2, 3, 4],
+          wrapColumns: [5, 6, 7],
+        }),
+        buildBasicFilterRequest(sheetId, PROFILE_CLICK_HEADERS.length),
       ],
     });
   }
@@ -855,6 +915,38 @@ export class GoogleSheetsClient {
     const kpiSheetId = sheetProperties.get("KPI")?.sheetId;
     if (kpiSheetId !== undefined) {
       await this.applyKpiSheetFormatting(kpiSheetId);
+    }
+
+    return { rowCount: rows.length };
+  }
+
+  async replaceProfileClickRows(rows: ProfileClickRow[]): Promise<{ rowCount: number }> {
+    if (!this.isConfigured()) {
+      return { rowCount: rows.length };
+    }
+
+    const sheetProperties = await this.ensureSheets();
+    await this.request(
+      "POST",
+      "values/%E3%83%97%E3%83%AD%E3%83%95%E3%83%AA%E3%83%B3%E3%82%AF%E3%82%AF%E3%83%AA%E3%83%83%E3%82%AF!A2:H:clear",
+      {},
+    );
+
+    const values = rows.map((row) => profileClickRowToValues(row));
+    const range = `プロフリンククリック!A2:H${Math.max(rows.length + 1, 2)}`;
+    await this.request(
+      "PUT",
+      `values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        range,
+        majorDimension: "ROWS",
+        values,
+      },
+    );
+
+    const profileClickSheetId = sheetProperties.get("プロフリンククリック")?.sheetId;
+    if (profileClickSheetId !== undefined) {
+      await this.applyProfileClickSheetFormatting(profileClickSheetId);
     }
 
     return { rowCount: rows.length };

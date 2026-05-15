@@ -51,6 +51,17 @@ export interface KpiRow {
   updatedAt: string;
 }
 
+export interface ProfileClickRow {
+  clickNo: string;
+  clickedAt: string;
+  shortId: string;
+  channel: string;
+  surface: string;
+  referer: string;
+  userAgent: string;
+  ipAddress: string;
+}
+
 export interface IdeaBacklogRow {
   ideaId: string;
   title: string;

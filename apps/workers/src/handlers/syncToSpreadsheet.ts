@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { GoogleSheetsClient } from "@ph4k/adapters";
-import type { AnalysisRow, IdeaBacklogRow, KpiRow, PostManagementRow } from "@ph4k/core";
+import type {
+  AnalysisRow,
+  ClickEvent,
+  IdeaBacklogRow,
+  KpiRow,
+  PostManagementRow,
+  ProfileClickRow,
+} from "@ph4k/core";
 import { loadEnv } from "@ph4k/config";
 import {
   createLogger,
@@ -301,6 +308,21 @@ const buildIdeaBacklogRows = (
       updatedAt: idea.updatedAt,
     }));
 
+const buildProfileClickRows = (clicks: ClickEvent[]): ProfileClickRow[] =>
+  clicks
+    .slice()
+    .sort((left, right) => right.clickedAt.localeCompare(left.clickedAt))
+    .map((click, index) => ({
+      clickNo: String(clicks.length - index),
+      clickedAt: formatDateTimeJst(click.clickedAt),
+      shortId: click.shortId,
+      channel: click.channel ?? "",
+      surface: click.surface ?? "",
+      referer: click.referer ?? "",
+      userAgent: click.userAgent ?? "",
+      ipAddress: click.ipAddress ?? "",
+    }));
+
 export const handler = async (event: unknown) => {
   const correlationId = randomUUID();
   const startedAt = Date.now();
@@ -351,7 +373,8 @@ export const handler = async (event: unknown) => {
         normalizePostClickCount(count),
       ]),
     );
-    const profileClickCount = await clickTrackingRepository.countClicks(PROFILE_TRACKING_POST_ID);
+    const profileClicks = await clickTrackingRepository.listClicks(PROFILE_TRACKING_POST_ID);
+    const profileClickCount = profileClicks.length;
 
     const candidatesById = new Map(
       allCandidates
@@ -442,6 +465,23 @@ export const handler = async (event: unknown) => {
         });
       },
     });
+    const profileClickRows = buildProfileClickRows(profileClicks);
+    const profileClickResult = await retry(
+      () => sheetsClient.replaceProfileClickRows(profileClickRows),
+      {
+        attempts: 3,
+        initialDelayMs: 1000,
+        onRetry: async (attempt, error, nextDelayMs) => {
+          logger.warn("spreadsheet sync retry scheduled", {
+            stage: "profile_clicks",
+            attempt,
+            nextDelayMs,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            postId: post.postId,
+          });
+        },
+      },
+    );
 
     const syncedPost = await postRepository.updateSpreadsheetSync(post.postId, {
       spreadsheetSyncStatus: "synced",
@@ -457,6 +497,7 @@ export const handler = async (event: unknown) => {
       postManagementRowCount: postManagementResult.rowCount,
       analysisRowCount: analysisResult.rowCount,
       kpiRowCount: kpiResult.rowCount,
+      profileClickRowCount: profileClickResult.rowCount,
       ideaBacklogRowCount: ideaBacklogResult.rowCount,
       spreadsheetSyncAttempts: syncedPost?.spreadsheetSyncAttempts ?? null,
       durationMs: Date.now() - startedAt,
@@ -477,6 +518,10 @@ export const handler = async (event: unknown) => {
       kpi: {
         rowCount: kpiResult.rowCount,
         rows: kpiRows,
+      },
+      profileClicks: {
+        rowCount: profileClickResult.rowCount,
+        rows: profileClickRows,
       },
       ideaBacklog: {
         rowCount: ideaBacklogResult.rowCount,

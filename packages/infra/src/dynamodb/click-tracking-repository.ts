@@ -104,6 +104,31 @@ export class DynamoClickTrackingRepository {
     return result.Count ?? 0;
   }
 
+  async listClicks(postId: string): Promise<ClickEvent[]> {
+    const pk = `${CLICK_LINK_PK_PREFIX}${postId}`;
+    const clicks: ClickEvent[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+
+    do {
+      const result = await this.client.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: "pk = :pk AND begins_with(sk, :sk)",
+          ExpressionAttributeValues: {
+            ":pk": pk,
+            ":sk": "CLICK#",
+          },
+          ExclusiveStartKey: exclusiveStartKey,
+        }),
+      );
+
+      clicks.push(...((result.Items ?? []) as ClickEvent[]));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return clicks;
+  }
+
   async deleteTrackingByPostId(postId: string): Promise<void> {
     const pk = `${CLICK_LINK_PK_PREFIX}${postId}`;
     const result = await this.client.send(
